@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { getCollection, COLLECTIONS } from "@/database/connection"
 import { ObjectId } from "mongodb"
+import { saveFile } from "@/lib/storage"
 
 export async function POST(request: Request) {
     try {
@@ -22,18 +23,10 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Invalid file type. Only JPG, PNG, WEBP, GIF allowed." }, { status: 400 })
         }
 
-        // Validate file size (max 2MB for Base64 storage)
-        if (file.size > 2 * 1024 * 1024) {
-            return NextResponse.json({ error: "File too large. Max 2MB allowed." }, { status: 400 })
-        }
+        // Tối ưu: Lưu ảnh vào Local Storage thay vì Base64
+        const avatarUrl = await saveFile(file, "avatars")
 
-        // Convert file to Base64 data URL
-        const bytes = await file.arrayBuffer()
-        const buffer = Buffer.from(bytes)
-        const base64 = buffer.toString("base64")
-        const avatarUrl = `data:${file.type};base64,${base64}`
-
-        // Update user in MongoDB with Base64 avatar
+        // Update user in MongoDB with local file path URL
         const collection = await getCollection(COLLECTIONS.USERS)
         await collection.updateOne(
             { _id: new ObjectId(userId) },

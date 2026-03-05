@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { getCollection, COLLECTIONS } from "@/database/connection"
 import { ObjectId } from "mongodb"
+import { saveBase64Image } from "@/lib/storage"
 
 // Get All (for Admin Management)
 export async function GET() {
@@ -24,6 +25,8 @@ export async function POST(req: Request) {
 
         const collection = await getCollection(COLLECTIONS.HERO_SLIDES)
 
+        // Tối ưu: Lưu ảnh vào Local Storage thay vì Base64
+        const imageUrl = await saveBase64Image(image, "slides")
         if (id) {
             // Update
             const result = await collection.updateOne(
@@ -32,7 +35,7 @@ export async function POST(req: Request) {
                     $set: {
                         title,
                         subtitle,
-                        image,
+                        image: imageUrl,
                         cta,
                         link,
                         page: page || "home",
@@ -48,7 +51,7 @@ export async function POST(req: Request) {
             const newSlide = {
                 title,
                 subtitle,
-                image,
+                image: imageUrl,
                 cta,
                 link,
                 page: page || "home",

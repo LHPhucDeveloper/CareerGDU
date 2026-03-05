@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { getCollection, COLLECTIONS } from "@/database/connection"
 import { ObjectId } from "mongodb"
+import { saveBase64Image } from "@/lib/storage"
 
 // GET /api/admin/partners - List all partners
 export async function GET(req: Request) {
@@ -32,9 +33,12 @@ export async function POST(req: Request) {
         }
 
         const collection = await getCollection(COLLECTIONS.COMPANIES)
+        // Tối ưu: Lưu ảnh vào Local Storage thay vì Base64
+        const logoUrl = await saveBase64Image(logo, "logos")
+
         const newPartner = {
             name,
-            logo: logo || "/placeholder.svg",
+            logo: logoUrl || "/placeholder.svg",
             industry,
             size: size || "N/A",
             location: location || "N/A",

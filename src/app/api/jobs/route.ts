@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { getCollection, COLLECTIONS } from "@/database/connection"
 import { ObjectId } from "mongodb"
+import { saveBase64Image } from "@/lib/storage"
 
 export const dynamic = 'force-dynamic'
 
@@ -258,12 +259,14 @@ export async function POST(req: Request) {
 
     const collection = await getCollection(COLLECTIONS.JOBS)
 
+    // Tối ưu: Lưu ảnh logo vào Local Storage thay vì Base64
+    const logoUrl = await saveBase64Image(body.logo, "logos")
     const newJob = {
       title,
       company,
       website: website || null,
       companyId: companyId || "unknown", // Should link to company profile
-      logo: body.logo || "/placeholder.svg?height=100&width=100", // Default logo
+      logo: logoUrl || "/placeholder.svg?height=100&width=100", // Default logo
       location,
       type,
       field,

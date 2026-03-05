@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server"
 import { getCollection, COLLECTIONS } from "@/database/connection"
 import { ObjectId } from "mongodb"
+import fs from "fs"
+import path from "path"
 
 export async function GET(
     request: Request,
@@ -28,24 +30,30 @@ export async function GET(
             return new Response("CV file not found for this application", { status: 404 })
         }
 
-        // Parse data URI: data:[<mediatype>][;base64],<data>
-        // Example: "data:application/pdf;base64,JVBERi0xLjQK..."
-        const matches = application.cvBase64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/)
+        let buffer: Buffer
+        let contentType = application.cvType || "application/pdf"
 
-        if (!matches || matches.length !== 3) {
-            console.error(`[CV API] Invalid CV file format (regex failed) for application: ${applicationId}`)
-            return new Response("Invalid CV file format", { status: 500 })
+        if (application.cvBase64.startsWith("/uploads/")) {
+            // Trường hợp lưu bằng file cục bộ
+            const filePath = path.join(process.cwd(), "public", application.cvBase64)
+            if (!fs.existsSync(filePath)) {
+                return new Response("File not found on server", { status: 404 })
+            }
+            buffer = fs.readFileSync(filePath)
+        } else {
+            // Tương thích ngược với dữ liệu Base64 cũ
+            const matches = application.cvBase64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/)
+            if (!matches || matches.length !== 3) {
+                return new Response("Invalid CV file format", { status: 500 })
+            }
+            contentType = matches[1]
+            buffer = Buffer.from(matches[2], 'base64')
         }
 
-        const contentType = matches[1]
-        const base64Data = matches[2]
-        const buffer = Buffer.from(base64Data, 'base64')
-
-        // Use 'inline' to try to open in browser (e.g. PDF), 'attachment' to force download
         const filename = application.cvOriginalName || 'cv.pdf'
         const encodedFilename = encodeURIComponent(filename)
 
-        return new Response(buffer, {
+        return new Response(new Uint8Array(buffer), {
             headers: {
                 "Content-Type": contentType,
                 "Content-Disposition": `inline; filename="${encodedFilename}"; filename*=UTF-8''${encodedFilename}`,
