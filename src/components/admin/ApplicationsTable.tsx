@@ -45,12 +45,8 @@ export function ApplicationsTable({ initialApplications }: ApplicationsTableProp
         app.companyName.toLowerCase().includes(searchQuery.toLowerCase())
     )
 
-    const handleDownload = (filename: string) => {
-        toast({
-            title: "Đang tải xuống",
-            description: `Đang tải file ${filename}... (Giả lập)`,
-        })
-        // Real logic would be: window.open(url, '_blank')
+    const handleDownload = (id: string, filename: string) => {
+        window.open(`/api/cv/${id}`, '_blank')
     }
 
     const handleDelete = (id: string) => {
@@ -186,7 +182,7 @@ export function ApplicationsTable({ initialApplications }: ApplicationsTableProp
                                         <TableCell>
                                             <div
                                                 className="flex items-center gap-2 px-2 py-1 rounded bg-gray-100 w-fit text-xs font-medium text-gray-700 cursor-pointer hover:bg-gray-200 transition-colors"
-                                                onClick={() => handleDownload(app.cvOriginalName)}
+                                                onClick={() => handleDownload(app._id, app.cvOriginalName)}
                                             >
                                                 <FileText size={14} className="text-gray-500" />
                                                 <span className="truncate max-w-[100px]" title={app.cvOriginalName}>{app.cvOriginalName}</span>
@@ -198,7 +194,7 @@ export function ApplicationsTable({ initialApplications }: ApplicationsTableProp
                                                     variant="outline"
                                                     size="sm"
                                                     className="h-8 w-8 p-0"
-                                                    onClick={() => handleDownload(app.cvOriginalName)}
+                                                    onClick={() => handleDownload(app._id, app.cvOriginalName)}
                                                 >
                                                     <Download size={16} className="text-gray-500" />
                                                 </Button>

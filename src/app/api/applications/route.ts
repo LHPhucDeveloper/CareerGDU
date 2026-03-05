@@ -3,10 +3,7 @@ import { getCollection, COLLECTIONS } from "@/database/connection"
 import { sendEmail } from "@/services/email.service"
 import { ObjectId } from "mongodb"
 import { checkNotificationPreference } from "@/lib/notification-utils"
-<<<<<<< HEAD
-=======
 import { saveBase64Image } from "@/lib/storage"
->>>>>>> a0283d5 (pre-merge save)
 
 export async function POST(request: Request) {
   try {
@@ -146,15 +143,11 @@ export async function POST(request: Request) {
 
     const applicationsCollection = await getCollection(COLLECTIONS.APPLICATIONS)
 
-<<<<<<< HEAD
-=======
     // Tối ưu: Lưu tệp CV vào Local Storage thay vì Base64 trong MongoDB
     let cvPath = null
     if (cvDataUrl) {
       cvPath = await saveBase64Image(cvDataUrl, "cvs")
     }
-
->>>>>>> a0283d5 (pre-merge save)
     const applicationData = {
       jobId,
       jobTitle,
@@ -169,11 +162,7 @@ export async function POST(request: Request) {
       faculty,
       cohort,
       message,
-<<<<<<< HEAD
-      cvBase64: cvDataUrl,
-=======
       cvBase64: cvPath, // Lưu đường dẫn tệp (ví dụ: /uploads/cvs/...)
->>>>>>> a0283d5 (pre-merge save)
       cvOriginalName: cvOriginalName,
       cvMimeType: cvMimeType,
       createdAt: new Date(),
