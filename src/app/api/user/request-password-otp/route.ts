@@ -47,7 +47,7 @@ export async function POST(request: Request) {
             html: `
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
                     <div style="text-align: center; margin-bottom: 20px;">
-                        <img src="${process.env.NEXT_PUBLIC_APP_URL}/gdu-logo.png" alt="GDU Logo" style="height: 60px; width: auto;">
+                        <img src="cid:gdu-logo" alt="GDU Logo" style="height: 60px; width: auto;">
                     </div>
                     <h2 style="color: #d32f2f; text-align: center;">Mã xác thực đổi mật khẩu</h2>
                     <p>Xin chào <strong>${user.fullName || user.email}</strong>,</p>
