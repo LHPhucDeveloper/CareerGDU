@@ -360,77 +360,86 @@ export function ApplyJobDialog({
                 }}
             >
                 {isSuccess ? (
-                    <div className="flex flex-col items-center justify-center py-6 text-center space-y-6">
-                        <div className="h-20 w-20 bg-green-100 rounded-full flex items-center justify-center animate-in zoom-in duration-300">
-                            <CheckCircle2 className="h-12 w-12 text-green-600" />
-                        </div>
-
-                        <div className="space-y-2">
-                            <h2 className="text-2xl font-bold text-gray-900">Ứng tuyển thành công!</h2>
-                            <p className="text-gray-500">
+                    <>
+                        <DialogHeader className="sr-only">
+                            <DialogTitle>Ứng tuyển thành công</DialogTitle>
+                            <DialogDescription>
                                 Hồ sơ của bạn đã được gửi đến nhà tuyển dụng.
-                            </p>
-                        </div>
+                            </DialogDescription>
+                        </DialogHeader>
 
-                        <div className="w-full bg-gray-50 rounded-lg p-5 border border-gray-100 text-left space-y-4">
-                            <h3 className="font-semibold text-gray-900 border-b border-gray-200 pb-2">Thông tin ứng tuyển</h3>
-
-                            <div className="grid grid-cols-2 gap-4 text-sm">
-                                <div>
-                                    <p className="text-gray-500">Vị trí</p>
-                                    <p className="font-medium text-gray-900 truncate" title={jobTitle}>{jobTitle}</p>
-                                </div>
-                                <div>
-                                    <p className="text-gray-500">Doanh nghiệp</p>
-                                    <p className="font-medium text-gray-900 truncate" title={companyName}>{companyName}</p>
-                                </div>
-                                <div>
-                                    <p className="text-gray-500">Trạng thái hồ sơ</p>
-                                    <p className="font-medium text-green-600">Đã gửi thành công</p>
-                                </div>
-                                <div>
-                                    <p className="text-gray-500">Thời gian</p>
-                                    <p className="font-medium text-gray-900">{new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - {new Date().toLocaleDateString('vi-VN')}</p>
-                                </div>
+                        <div className="flex flex-col items-center justify-center py-6 text-center space-y-6">
+                            <div className="h-20 w-20 bg-green-100 rounded-full flex items-center justify-center animate-in zoom-in duration-300">
+                                <CheckCircle2 className="h-12 w-12 text-green-600" />
                             </div>
 
-                            <h3 className="font-semibold text-gray-900 border-b border-gray-200 pb-2 pt-2">Thông tin liên hệ nhà tuyển dụng</h3>
-                            <div className="grid grid-cols-1 gap-3 text-sm">
-                                <div className="flex items-center gap-2">
-                                    <Globe className="h-4 w-4 text-gray-400" />
-                                    <p className="text-gray-500 w-20">Website:</p>
-                                    <a href={companyWebsite || "#"} target="_blank" rel="noopener noreferrer" className="font-medium text-blue-600 hover:underline truncate">
-                                        {companyWebsite || "N/A"}
-                                    </a>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <Mail className="h-4 w-4 text-gray-400" />
-                                    <p className="text-gray-500 w-20">Email:</p>
-                                    <p className="font-medium text-gray-900">{companyEmail || "N/A"}</p>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <Phone className="h-4 w-4 text-gray-400" />
-                                    <p className="text-gray-500 w-20">Điện thoại:</p>
-                                    <p className="font-medium text-gray-900">{companyPhone || "N/A"}</p>
-                                </div>
-                            </div>
-
-                            <div className="pt-2 border-t border-gray-200 mt-2">
-                                <p className="text-xs text-gray-500 italic">
-                                    * Bạn có thể chủ động liên hệ với nhà tuyển dụng qua các kênh trên để được phản hồi nhanh hơn.
+                            <div className="space-y-2">
+                                <h2 className="text-2xl font-bold text-gray-900">Ứng tuyển thành công!</h2>
+                                <p className="text-gray-500">
+                                    Hồ sơ của bạn đã được gửi đến nhà tuyển dụng.
                                 </p>
                             </div>
-                        </div>
 
-                        <div className="flex gap-3 w-full">
-                            <Button onClick={onClose} variant="outline" className="flex-1">
-                                Đóng
-                            </Button>
-                            <Button onClick={() => window.location.href = "/dashboard/applications"} className="flex-1 bg-[#1e3a5f] hover:bg-[#1e3a5f]/90 text-white">
-                                Xem hồ sơ của tôi
-                            </Button>
+                            <div className="w-full bg-gray-50 rounded-lg p-5 border border-gray-100 text-left space-y-4">
+                                <h3 className="font-semibold text-gray-900 border-b border-gray-200 pb-2">Thông tin ứng tuyển</h3>
+
+                                <div className="grid grid-cols-2 gap-4 text-sm">
+                                    <div>
+                                        <p className="text-gray-500">Vị trí</p>
+                                        <p className="font-medium text-gray-900 truncate" title={jobTitle}>{jobTitle}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-gray-500">Doanh nghiệp</p>
+                                        <p className="font-medium text-gray-900 truncate" title={companyName}>{companyName}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-gray-500">Trạng thái hồ sơ</p>
+                                        <p className="font-medium text-green-600">Đã gửi thành công</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-gray-500">Thời gian</p>
+                                        <p className="font-medium text-gray-900">{new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - {new Date().toLocaleDateString('vi-VN')}</p>
+                                    </div>
+                                </div>
+
+                                <h3 className="font-semibold text-gray-900 border-b border-gray-200 pb-2 pt-2">Thông tin liên hệ nhà tuyển dụng</h3>
+                                <div className="grid grid-cols-1 gap-3 text-sm">
+                                    <div className="flex items-center gap-2">
+                                        <Globe className="h-4 w-4 text-gray-400" />
+                                        <p className="text-gray-500 w-20">Website:</p>
+                                        <a href={companyWebsite || "#"} target="_blank" rel="noopener noreferrer" className="font-medium text-blue-600 hover:underline truncate">
+                                            {companyWebsite || "N/A"}
+                                        </a>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <Mail className="h-4 w-4 text-gray-400" />
+                                        <p className="text-gray-500 w-20">Email:</p>
+                                        <p className="font-medium text-gray-900">{companyEmail || "N/A"}</p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <Phone className="h-4 w-4 text-gray-400" />
+                                        <p className="text-gray-500 w-20">Điện thoại:</p>
+                                        <p className="font-medium text-gray-900">{companyPhone || "N/A"}</p>
+                                    </div>
+                                </div>
+
+                                <div className="pt-2 border-t border-gray-200 mt-2">
+                                    <p className="text-xs text-gray-500 italic">
+                                        * Bạn có thể chủ động liên hệ với nhà tuyển dụng qua các kênh trên để được phản hồi nhanh hơn.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="flex gap-3 w-full">
+                                <Button onClick={() => handleOpenChange(false)} variant="outline" className="flex-1">
+                                    Đóng
+                                </Button>
+                                <Button onClick={() => window.location.href = "/dashboard/applications"} className="flex-1 bg-[#1e3a5f] hover:bg-[#1e3a5f]/90 text-white">
+                                    Xem hồ sơ của tôi
+                                </Button>
+                            </div>
                         </div>
-                    </div>
+                    </>
                 ) : (
                     <form onSubmit={handleSubmit}>
                         <DialogHeader>
@@ -662,7 +671,12 @@ export function ApplyJobDialog({
                             </div>
                         </div>
                         <DialogFooter>
-                            <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting}>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => handleOpenChange(false)}
+                                disabled={isSubmitting}
+                            >
                                 Hủy bỏ
                             </Button>
                             <Button type="submit" disabled={isSubmitting || isFull} className={`bg-[#1e3a5f] hover:bg-[#1e3a5f]/90 text-white ${isFull ? "opacity-50 cursor-not-allowed" : ""}`}>
