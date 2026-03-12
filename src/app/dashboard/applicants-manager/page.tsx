@@ -36,6 +36,32 @@ import { Suspense } from "react"
 
 export const dynamic = "force-dynamic"
 
+const base64ToBlobUrl = (base64String: string) => {
+    try {
+        const [meta, content] = base64String.split(",")
+
+        if (!content) {
+            throw new Error("Base64 không hợp lệ")
+        }
+
+        const mime = meta.match(/data:(.*?);base64/)?.[1] || "application/pdf"
+        const byteCharacters = atob(content)
+        const byteNumbers = new Array(byteCharacters.length)
+
+        for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i)
+        }
+
+        const byteArray = new Uint8Array(byteNumbers)
+        const blob = new Blob([byteArray], { type: mime })
+
+        return URL.createObjectURL(blob)
+    } catch (error) {
+        console.error("Lỗi convert base64 sang Blob URL:", error)
+        return null
+    }
+}
+
 function ManageApplicationsContent() {
     const router = useRouter()
     const { user, isLoading } = useAuth()
@@ -130,10 +156,15 @@ function ManageApplicationsContent() {
     const handleViewCV = async (app: Application) => {
         setSelectedApp(app)
         setViewMode("cv")
-        setCvUrl(null)
         setCvLoading(true)
 
-        // Auto-update status to "Reviewed" if currently "New"
+        setCvUrl((prev) => {
+            if (prev?.startsWith("blob:")) {
+                URL.revokeObjectURL(prev)
+            }
+            return null
+        })
+
         if (app.status === "new") {
             handleStatusChange(app._id, "reviewed")
         }
@@ -143,7 +174,17 @@ function ManageApplicationsContent() {
             const data = await res.json()
 
             if (data.success && data.data.cvBase64) {
-                setCvUrl(data.data.cvBase64)
+                const blobUrl = base64ToBlobUrl(data.data.cvBase64)
+
+                if (blobUrl) {
+                    setCvUrl(blobUrl)
+                } else {
+                    toast({
+                        title: "Lỗi",
+                        description: "Không thể xử lý file CV",
+                        variant: "destructive"
+                    })
+                }
             } else {
                 toast({
                     title: "Lỗi",
@@ -153,10 +194,23 @@ function ManageApplicationsContent() {
             }
         } catch (error) {
             console.error("Error fetching CV:", error)
+            toast({
+                title: "Lỗi",
+                description: "Có lỗi khi tải CV",
+                variant: "destructive"
+            })
         } finally {
             setCvLoading(false)
         }
     }
+
+    useEffect(() => {
+        return () => {
+            if (cvUrl?.startsWith("blob:")) {
+                URL.revokeObjectURL(cvUrl)
+            }
+        }
+    }, [cvUrl])
 
     const handleViewDetails = (app: Application) => {
         setSelectedApp(app)
@@ -552,12 +606,20 @@ function ManageApplicationsContent() {
                 </Card>
             </main>
 
-            <Dialog open={!!selectedApp} onOpenChange={(open) => {
-                if (!open) {
-                    setSelectedApp(null)
-                    setIsExpanded(false)
-                }
-            }}>
+            <Dialog
+                open={!!selectedApp}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        if (cvUrl?.startsWith("blob:")) {
+                            URL.revokeObjectURL(cvUrl)
+                        }
+                        setCvUrl(null)
+                        setSelectedApp(null)
+                        setIsExpanded(false)
+                        setViewMode("details")
+                    }
+                }}
+            >
                 <DialogContent className={`${isExpanded ? 'max-w-[98vw] h-[98vh] w-[98vw]' : (viewMode === 'cv' ? 'max-w-4xl h-[90vh]' : 'max-w-2xl max-h-[85vh]')} flex flex-col p-4 sm:p-6 rounded-2xl sm:rounded-xl overflow-y-auto duration-300`}>
                     <DialogHeader>
                         <DialogTitle className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-4 mb-2">

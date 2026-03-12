@@ -30,6 +30,7 @@
 // }
 
 import nodemailer from "nodemailer"
+import path from "path"
 
 interface SendEmailParams {
     to: string
@@ -59,6 +60,13 @@ export async function sendEmail({ to, subject, html }: SendEmailParams) {
             to,
             subject,
             html,
+            attachments: [
+                {
+                    filename: "gdu-logo.jpg",
+                    path: path.join(process.cwd(), "public", "gdu-logo.jpg"),
+                    cid: "gdu-logo"
+                }
+            ]
         })
 
         return { success: true, messageId: result.messageId }
