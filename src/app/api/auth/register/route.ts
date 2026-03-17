@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getCollection, COLLECTIONS } from "../../../../database/connection"
+import prisma from "@/database/prisma"
 import bcrypt from "bcryptjs"
 import crypto from "crypto"
 import { sendEmail } from "../../../../services/email.service"
@@ -32,48 +32,69 @@ export async function POST(request: Request) {
 
     const normalizedEmail = email.toLowerCase().trim()
 
-    const collection = await getCollection(COLLECTIONS.USERS)
-    const pendingCollection = await getCollection(COLLECTIONS.PENDING_USERS)
+    // 1. Check if email exists in main USERS table (Verified accounts)
+    const existingVerifiedUser = await prisma.user.findFirst({
+      where: {
+        email: normalizedEmail,
+        emailVerified: true
+      }
+    })
 
-    // 1. Check if email exists in main USERS collection (Verified accounts)
-    const existingVerifiedUser = await collection.findOne({ email: normalizedEmail, emailVerified: true })
     if (existingVerifiedUser) {
       return NextResponse.json({ error: "Email đã được sử dụng" }, { status: 409 })
     }
 
-    // 2. Check if user exists in PENDING_USERS or is unverified in USERS (Legacy case)
-    let pendingUser = await pendingCollection.findOne({ email: normalizedEmail })
+    // 2. Check if user exists in PendingUser or is unverified in User
+    let pendingUser = await prisma.pendingUser.findUnique({
+      where: { email: normalizedEmail }
+    })
     let foundInPending = !!pendingUser
 
+    let unverifiedUser = null
     if (!pendingUser) {
-      // Check for legacy unverified user in main collection
-      pendingUser = await collection.findOne({ email: normalizedEmail, emailVerified: false })
+      unverifiedUser = await prisma.user.findFirst({
+        where: { email: normalizedEmail, emailVerified: false }
+      })
     }
 
-    if (pendingUser) {
+    if (pendingUser || unverifiedUser) {
       // Generate new OTP
       const otp = generateOTP()
       const hashedOTP = hashOTP(otp)
       const expiresAt = new Date(Date.now() + 5 * 60 * 1000)
 
-      // Update the relevant collection
-      const targetCollection = foundInPending ? pendingCollection : collection
-      await targetCollection.updateOne(
-        { email: normalizedEmail },
-        {
-          $set: {
-            name, // Update name/data in case they changed it
-            password: await bcrypt.hash(password, 10),
+      const hashedPassword = await bcrypt.hash(password, 10)
+
+      // Update the relevant table
+      if (foundInPending) {
+        await prisma.pendingUser.update({
+          where: { email: normalizedEmail },
+          data: {
+            name,
+            password: hashedPassword,
             phone,
             role,
             studentId,
             major,
             emailOtp: hashedOTP,
-            emailOtpExpires: expiresAt,
-            updatedAt: new Date()
-          },
-        }
-      )
+            emailOtpExpires: expiresAt
+          }
+        })
+      } else if (unverifiedUser) {
+        await prisma.user.update({
+          where: { id: unverifiedUser.id },
+          data: {
+            name,
+            password: hashedPassword,
+            phone,
+            role,
+            studentId,
+            major,
+            emailOtp: hashedOTP,
+            emailOtpExpires: expiresAt
+          }
+        })
+      }
 
       // Send OTP email (non-blocking)
       sendEmail({
@@ -111,7 +132,9 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Mã số sinh viên phải có đủ 8 số" }, { status: 400 })
       }
 
-      const existingStudentId = await collection.findOne({ studentId })
+      const existingStudentId = await prisma.user.findFirst({
+        where: { studentId }
+      })
       if (existingStudentId) {
         return NextResponse.json({ error: "Mã số sinh viên đã được đăng ký" }, { status: 409 })
       }
@@ -119,9 +142,10 @@ export async function POST(request: Request) {
 
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10)
+    const otp = generateOTP()
 
-    // Prepare new user object in PENDING collection
-    const newUser: any = {
+    // Prepare new user data for PendingUser table
+    const pendingData: any = {
       name,
       password: hashedPassword,
       role: role,
@@ -130,31 +154,30 @@ export async function POST(request: Request) {
       emailVerified: false,
       status: role === "employer" ? "pending" : "active",
       avatar: `/placeholder.svg?height=100&width=100&query=${encodeURIComponent(name)}`,
-      createdAt: new Date(),
+      emailOtp: hashOTP(otp),
+      emailOtpExpires: new Date(Date.now() + 5 * 60 * 1000)
     }
 
     if (role === "student") {
-      newUser.studentId = studentId || ""
-      newUser.major = major || ""
+      pendingData.studentId = studentId || ""
+      pendingData.major = major || ""
     }
 
     if (role === "employer") {
-      newUser.contactPerson = body.contactPerson || ""
-      newUser.companyName = body.companyName || ""
-      newUser.companyType = body.companyType || ""
-      newUser.companySize = body.companySize || ""
-      newUser.foreignCapital = body.foreignCapital || false
-      newUser.province = body.province || ""
-      newUser.industry = body.industry || ""
-      newUser.address = body.address || ""
+      pendingData.contactPerson = body.contactPerson || ""
+      pendingData.companyName = body.companyName || ""
+      pendingData.companyType = body.companyType || ""
+      pendingData.companySize = body.companySize || ""
+      pendingData.foreignCapital = body.foreignCapital || false
+      pendingData.province = body.province || ""
+      pendingData.industry = body.industry || ""
+      pendingData.address = body.address || ""
     }
 
-    const otp = generateOTP()
-    newUser.emailOtp = hashOTP(otp)
-    newUser.emailOtpExpires = new Date(Date.now() + 5 * 60 * 1000)
-
-    // Insert into PENDING collection
-    await pendingCollection.insertOne(newUser)
+    // Insert into PendingUser table
+    await prisma.pendingUser.create({
+      data: pendingData
+    })
 
     // Send Email OTP (non-blocking)
     sendEmail({
@@ -182,21 +205,20 @@ export async function POST(request: Request) {
               `,
     }).catch(err => console.error("Background email error:", err))
 
-    // NEW: Notify Admin immediately about new registration (especially Employers)
+    // Notify Admin
     try {
-      const notificationsCollection = await getCollection(COLLECTIONS.NOTIFICATIONS)
       const isEmployer = role === "employer"
-
-      await notificationsCollection.insertOne({
-        targetRole: "admin",
-        type: "system",
-        title: isEmployer ? "Yêu cầu đăng ký Nhà tuyển dụng mới" : "Người dùng mới đăng ký",
-        message: isEmployer
-          ? `${newUser.companyName || name} vừa đăng ký. Chờ xác minh email và phê duyệt.`
-          : `${name} vừa đăng ký tài khoản sinh viên.`,
-        read: false,
-        createdAt: new Date(),
-        link: isEmployer ? "/dashboard/users?role=employer" : "/dashboard/users"
+      await prisma.notification.create({
+        data: {
+          targetRole: "admin",
+          type: "system",
+          title: isEmployer ? "Yêu cầu đăng ký Nhà tuyển dụng mới" : "Người dùng mới đăng ký",
+          message: isEmployer
+            ? `${pendingData.companyName || name} vừa đăng ký. Chờ xác minh email và phê duyệt.`
+            : `${name} vừa đăng ký tài khoản sinh viên.`,
+          read: false,
+          link: isEmployer ? "/dashboard/users?role=employer" : "/dashboard/users"
+        }
       })
     } catch (notifError) {
       console.error("Failed to create admin notification:", notifError)
@@ -213,3 +235,4 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Có lỗi xảy ra. Vui lòng thử lại." }, { status: 500 })
   }
 }
+

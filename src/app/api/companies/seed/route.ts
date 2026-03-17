@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getCollection, COLLECTIONS } from "@/database/connection"
+import prisma from "@/database/prisma"
 
 const companies = [
     {
@@ -14,7 +14,6 @@ const companies = [
         verified: true,
         benefits: ["Lương thưởng hấp dẫn", "Bảo hiểm cao cấp", "Đào tạo chuyên nghiệp", "Môi trường quốc tế"],
         website: "https://techcombank.com/",
-        createdAt: new Date().toISOString()
     },
     {
         name: "FPT Software",
@@ -28,7 +27,6 @@ const companies = [
         verified: true,
         benefits: ["Đào tạo chuyên sâu", "Cơ hội quốc tế", "Lương cạnh tranh", "Team building"],
         website: "https://tuyendung.frt.vn/",
-        createdAt: new Date().toISOString()
     },
     {
         name: "ITP - ĐHQG-HCM",
@@ -42,7 +40,6 @@ const companies = [
         verified: true,
         benefits: ["Môi trường học thuật", "Hỗ trợ khởi nghiệp", "Networking", "Đào tạo"],
         website: "https://itp.vn/",
-        createdAt: new Date().toISOString()
     },
     {
         name: "IPS Independent",
@@ -56,7 +53,6 @@ const companies = [
         verified: true,
         benefits: ["Môi trường chuyên nghiệp", "Đào tạo nghiệp vụ", "Phúc lợi tốt", "Thăng tiến rõ ràng"],
         website: "https://firstindependent.vn/",
-        createdAt: new Date().toISOString()
     },
     {
         name: "TekNix Corporation",
@@ -70,7 +66,6 @@ const companies = [
         verified: true,
         benefits: ["Công nghệ mới nhất", "Start-up culture", "Remote work", "Thưởng dự án"],
         website: "https://www.teknixcorp.com/",
-        createdAt: new Date().toISOString()
     },
     {
         name: "Cohota",
@@ -84,7 +79,6 @@ const companies = [
         verified: true,
         benefits: ["Môi trường sáng tạo", "Học hỏi liên tục", "Flexible hours", "Stock options"],
         website: "https://cohota.com/",
-        createdAt: new Date().toISOString()
     },
     {
         name: "TV MEDIA",
@@ -97,7 +91,6 @@ const companies = [
         rating: 4.5,
         verified: true,
         benefits: ["Môi trường năng động", "Tham gia sự kiện lớn", "Du lịch hàng năm", "Thưởng dự án"],
-        createdAt: new Date().toISOString()
     },
     {
         name: "KÊNH TÀI TRỢ",
@@ -110,7 +103,6 @@ const companies = [
         rating: 4.0,
         verified: true,
         benefits: ["Làm việc với Gen Z", "Môi trường trẻ trung", "Cơ hội networking", "Phát triển kỹ năng mềm"],
-        createdAt: new Date().toISOString()
     },
     {
         name: "QUỐC & CỘNG SỰ",
@@ -124,7 +116,6 @@ const companies = [
         verified: true,
         benefits: ["Đào tạo pháp lý chuyên sâu", "Làm việc với luật sư giỏi", "Môi trường chuyên nghiệp", "Cơ hội thăng tiến"],
         website: "https://quoclaw.vn/vi/category/tuyen-dung/",
-        createdAt: new Date().toISOString()
     },
     {
         name: "NHÂN KIỆT",
@@ -138,7 +129,6 @@ const companies = [
         verified: true,
         benefits: ["Quy mô lớn", "Ổn định", "Chế độ đầy đủ", "Đào tạo nghiệp vụ"],
         website: "https://nhankiet.vn/",
-        createdAt: new Date().toISOString()
     },
     {
         name: "GIA NGUYỄN ADS",
@@ -152,7 +142,6 @@ const companies = [
         verified: true,
         benefits: ["Tiếp cận công nghệ mới", "Dự án đa dạng", "Thưởng hiệu quả", "Môi trường sáng tạo"],
         website: "https://gianguyenads.com/vi/",
-        createdAt: new Date().toISOString()
     },
     {
         name: "ALTA GROUP",
@@ -166,7 +155,6 @@ const companies = [
         verified: true,
         benefits: ["Tập đoàn lớn", "Công nghệ cao", "Đãi ngộ tốt", "Cơ hội đa ngành"],
         website: "https://alta.com.vn/",
-        createdAt: new Date().toISOString()
     },
     {
         name: "MIA SOLUTION",
@@ -180,23 +168,21 @@ const companies = [
         verified: true,
         benefits: ["Dự án Tech thú vị", "Học hỏi công nghệ mới", "Môi trường thân thiện", "Thưởng dự án"],
         website: "https://miasolution.vn/",
-        createdAt: new Date().toISOString()
     }
 ]
 
 export async function GET() {
     try {
-        const collection = await getCollection(COLLECTIONS.COMPANIES)
+        // Clear existing to avoid duplicates
+        await prisma.company.deleteMany({})
 
-        // Clear existing to avoid duplicates if re-run during development
-        // In production, you'd be more careful.
-        await collection.deleteMany({})
-
-        const result = await collection.insertMany(companies)
+        const { count } = await prisma.company.createMany({
+            data: companies as any
+        })
 
         return NextResponse.json({
             success: true,
-            count: result.insertedCount,
+            count: count,
             message: "Seeded partners successfully"
         })
     } catch (error) {
@@ -204,3 +190,4 @@ export async function GET() {
         return NextResponse.json({ success: false, error: "Failed to seed partners" }, { status: 500 })
     }
 }
+

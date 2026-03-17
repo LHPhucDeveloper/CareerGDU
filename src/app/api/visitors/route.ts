@@ -1,18 +1,6 @@
 import { NextResponse } from "next/server"
-import { getCollection, COLLECTIONS } from "@/database/connection"
+import prisma from "@/database/prisma"
 import { headers } from "next/headers"
-
-export interface Visitor {
-    ip: string
-    userAgent: string
-    page: string
-    referrer?: string
-    userId?: string
-    userName?: string
-    visitedAt: Date
-    country?: string
-    device?: string
-}
 
 // Helper to detect device type
 function getDeviceType(userAgent: string): string {
@@ -43,27 +31,17 @@ export async function POST(request: Request) {
             "unknown"
         const userAgent = headersList.get("user-agent") || "unknown"
 
-        const visitor: Visitor = {
-            ip,
-            userAgent,
-            page: page || "/",
-            referrer,
-            userId,
-            userName,
-            visitedAt: new Date(),
-            device: `${getDeviceType(userAgent)} - ${getBrowserName(userAgent)}`,
-        }
-
-        const collection = await getCollection(COLLECTIONS.VISITORS)
-
-        // Ensure index for performance on first write
-        try {
-            await collection.createIndex({ visitedAt: -1 })
-        } catch (e) {
-            // Index might already exist or background creation is fine
-        }
-
-        await collection.insertOne(visitor)
+        await prisma.visitor.create({
+            data: {
+                ip,
+                userAgent,
+                page: page || "/",
+                referrer,
+                userId,
+                userName,
+                device: `${getDeviceType(userAgent)} - ${getBrowserName(userAgent)}`
+            }
+        })
 
         return NextResponse.json({ success: true })
     } catch (error) {
@@ -76,52 +54,66 @@ export async function POST(request: Request) {
 export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url)
-        const page = parseInt(searchParams.get("page") || "1")
+        const pageNum = parseInt(searchParams.get("page") || "1")
         const limit = parseInt(searchParams.get("limit") || "50")
         const days = parseInt(searchParams.get("days") || "7")
         const download = searchParams.get("download") === "true"
-
-        const collection = await getCollection(COLLECTIONS.VISITORS)
 
         // Filter by date range
         const startDate = new Date()
         startDate.setDate(startDate.getDate() - days)
 
-        const filter = { visitedAt: { $gte: startDate } }
+        const where: any = { visitedAt: { gte: startDate } }
 
         // Get total count
-        const totalCount = await collection.countDocuments(filter)
+        const totalCount = await prisma.visitor.count({ where })
 
         // Get visitors with pagination or full list for download
-        let visitorsQuery = collection.find(filter).sort({ visitedAt: -1 })
-
-        if (!download) {
-            visitorsQuery = visitorsQuery.skip((page - 1) * limit).limit(limit)
-        }
-
-        const visitors = await visitorsQuery.toArray()
+        const visitors = await prisma.visitor.findMany({
+            where,
+            orderBy: {
+                visitedAt: 'desc'
+            },
+            ...(download ? {} : { skip: (pageNum - 1) * limit, take: limit })
+        })
 
         // Calculate stats
         const today = new Date()
         today.setHours(0, 0, 0, 0)
 
-        const todayCount = await collection.countDocuments({
-            visitedAt: { $gte: today }
+        const todayCount = await prisma.visitor.count({
+            where: {
+                visitedAt: { gte: today }
+            }
         })
 
-        const uniqueIPs = await collection.distinct("ip", filter)
-        const uniqueUsers = await collection.distinct("userId", {
-            ...filter,
-            userId: { $ne: null, $exists: true }
+        // Unique IPs - Prisma 
+        const uniqueIPsResult = await prisma.visitor.groupBy({
+            by: ['ip'],
+            where: where,
+            _count: { ip: true }
+        })
+
+        // Unique Users
+        const uniqueUsersResult = await prisma.visitor.groupBy({
+            by: ['userId'],
+            where: {
+                ...where,
+                userId: { not: null }
+            },
+            _count: { userId: true }
         })
 
         // Top pages
-        const topPages = await collection.aggregate([
-            { $match: filter },
-            { $group: { _id: "$page", count: { $sum: 1 } } },
-            { $sort: { count: -1 } },
-            { $limit: 10 }
-        ]).toArray()
+        const topPages = await prisma.visitor.groupBy({
+            by: ['page'],
+            where: where,
+            _count: { id: true },
+            orderBy: {
+                _count: { id: 'desc' }
+            },
+            take: 10
+        })
 
         return NextResponse.json({
             success: true,
@@ -129,12 +121,12 @@ export async function GET(request: Request) {
             stats: {
                 totalVisitors: totalCount,
                 todayVisitors: todayCount,
-                uniqueVisitors: uniqueIPs.length,
-                loggedInUsers: uniqueUsers.length,
-                topPages: topPages.map(p => ({ page: p._id, count: p.count }))
+                uniqueVisitors: uniqueIPsResult.length,
+                loggedInUsers: uniqueUsersResult.length,
+                topPages: topPages.map(p => ({ page: p.page, count: p._count.id }))
             },
             pagination: {
-                page,
+                page: pageNum,
                 limit,
                 totalPages: Math.ceil(totalCount / limit),
                 totalCount
@@ -152,23 +144,24 @@ export async function DELETE(request: Request) {
         const { searchParams } = new URL(request.url)
         const days = parseInt(searchParams.get("days") || "30")
 
-        const collection = await getCollection(COLLECTIONS.VISITORS)
-
         // Delete records older than 'days'
         const beforeDate = new Date()
         beforeDate.setDate(beforeDate.getDate() - days)
 
-        const result = await collection.deleteMany({
-            visitedAt: { $lt: beforeDate }
+        const result = await prisma.visitor.deleteMany({
+            where: {
+                visitedAt: { lt: beforeDate }
+            }
         })
 
         return NextResponse.json({
             success: true,
-            deletedCount: result.deletedCount,
-            message: `Đã xóa ${result.deletedCount} bản ghi cũ hơn ${days} ngày.`
+            deletedCount: result.count,
+            message: `Đã xóa ${result.count} bản ghi cũ hơn ${days} ngày.`
         })
     } catch (error) {
         console.error("Error cleaning visitors:", error)
         return NextResponse.json({ success: false, error: "Failed to clean visitors" }, { status: 500 })
     }
 }
+

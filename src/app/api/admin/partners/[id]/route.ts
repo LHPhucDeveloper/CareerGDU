@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server"
-import { getCollection, COLLECTIONS } from "@/database/connection"
-import { ObjectId } from "mongodb"
+import prisma from "@/database/prisma"
 
 // PATCH /api/admin/partners/[id] - Update a partner
 export async function PATCH(
@@ -11,19 +10,13 @@ export async function PATCH(
         const { id } = await params
         const body = await req.json()
 
-        const collection = await getCollection(COLLECTIONS.COMPANIES)
+        // Remove ID from body to avoid trying to update it
+        const { id: _, _id, ...updateData } = body
 
-        // Remove _id from body to avoid trying to update it
-        const { _id, ...updateData } = body
-
-        const result = await collection.updateOne(
-            { _id: new ObjectId(id) },
-            { $set: { ...updateData, updatedAt: new Date().toISOString() } }
-        )
-
-        if (result.matchedCount === 0) {
-            return NextResponse.json({ success: false, error: "Partner not found" }, { status: 404 })
-        }
+        await prisma.company.update({
+            where: { id },
+            data: { ...updateData, updatedAt: new Date() }
+        })
 
         return NextResponse.json({ success: true, message: "Partner updated successfully" })
     } catch (error) {
@@ -39,13 +32,10 @@ export async function DELETE(
 ) {
     try {
         const { id } = await params
-        const collection = await getCollection(COLLECTIONS.COMPANIES)
 
-        const result = await collection.deleteOne({ _id: new ObjectId(id) })
-
-        if (result.deletedCount === 0) {
-            return NextResponse.json({ success: false, error: "Partner not found" }, { status: 404 })
-        }
+        await prisma.company.delete({
+            where: { id }
+        })
 
         return NextResponse.json({ success: true, message: "Partner deleted successfully" })
     } catch (error) {
@@ -53,3 +43,4 @@ export async function DELETE(
         return NextResponse.json({ success: false, error: "Failed to delete partner" }, { status: 500 })
     }
 }
+

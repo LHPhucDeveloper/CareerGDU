@@ -1,19 +1,20 @@
-
 import { NextResponse } from "next/server"
-import { getCollection, COLLECTIONS } from "@/database/connection"
+import prisma from "@/database/prisma"
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
     try {
-        const collection = await getCollection(COLLECTIONS.JOBS)
-
         // Find all jobs sorted by title
-        const jobs = await collection.find({}).sort({ title: 1, postedAt: -1 }).toArray()
+        const jobs = await prisma.job.findMany({
+            orderBy: [
+                { title: 'asc' },
+                { postedAt: 'desc' }
+            ]
+        })
 
         const seen = new Set()
         const duplicates = []
-
         const debugLog = []
         let deletedCount = 0
 
@@ -33,7 +34,7 @@ export async function GET() {
                 debugLog.push({
                     title: job.title,
                     key: key,
-                    id: job._id.toString(),
+                    id: job.id,
                     isSeen: seen.has(key)
                 })
             }
@@ -41,17 +42,19 @@ export async function GET() {
             if (key === "||") continue; // Skip empty jobs
 
             if (seen.has(key)) {
-                duplicates.push(job._id)
+                duplicates.push(job.id)
             } else {
                 seen.add(key)
             }
         }
 
         if (duplicates.length > 0) {
-            const result = await collection.deleteMany({
-                _id: { $in: duplicates }
+            const result = await prisma.job.deleteMany({
+                where: {
+                    id: { in: duplicates }
+                }
             })
-            deletedCount = result.deletedCount
+            deletedCount = result.count
         }
 
         return NextResponse.json({
@@ -69,3 +72,4 @@ export async function GET() {
         )
     }
 }
+

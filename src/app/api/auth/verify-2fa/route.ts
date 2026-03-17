@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getCollection, COLLECTIONS } from "@/database/connection"
+import prisma from "@/database/prisma"
 import crypto from "crypto"
 
 // Base32 decoding for TOTP verification
@@ -63,8 +63,10 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Thiếu thông tin xác thực" }, { status: 400 })
         }
 
-        const collection = await getCollection(COLLECTIONS.USERS)
-        const user = await collection.findOne({ email })
+        const normalizedEmail = email.toLowerCase().trim()
+        const user = await prisma.user.findUnique({
+            where: { email: normalizedEmail }
+        })
 
         if (!user) {
             return NextResponse.json({ error: "Không tìm thấy tài khoản" }, { status: 404 })
@@ -79,17 +81,18 @@ export async function POST(req: Request) {
         if (useRecoveryCode) {
             // Verify recovery code
             const hashedToken = crypto.createHash("sha256").update(token.toUpperCase()).digest("hex")
-            const codeIndex = user.recoveryCodes?.findIndex((code: string) => code === hashedToken)
+            const recoveryCodes = (user.recoveryCodes as string[]) || []
+            const codeIndex = recoveryCodes.findIndex((code: string) => code === hashedToken)
 
-            if (codeIndex !== undefined && codeIndex >= 0) {
+            if (codeIndex >= 0) {
                 isValid = true
                 // Remove used recovery code
-                const newRecoveryCodes = [...user.recoveryCodes]
+                const newRecoveryCodes = [...recoveryCodes]
                 newRecoveryCodes.splice(codeIndex, 1)
-                await collection.updateOne(
-                    { _id: user._id },
-                    { $set: { recoveryCodes: newRecoveryCodes } }
-                )
+                await prisma.user.update({
+                    where: { id: user.id },
+                    data: { recoveryCodes: newRecoveryCodes }
+                })
             }
         } else {
             // Verify TOTP token from Google Authenticator
@@ -105,15 +108,23 @@ export async function POST(req: Request) {
         }
 
         // Return user session data (same as standard login)
-        const { password: _, _id, ...userWithoutPassword } = user
-
         const userResponse = {
-            ...userWithoutPassword,
+            id: user.id,
+            _id: user.id,
+            name: user.name,
+            email: user.email,
             role: user.role,
-            id: _id.toString(),
-            _id: _id.toString(),
-            emailVerified: user.emailVerified ?? true,
-            phoneVerified: user.phoneVerified ?? false,
+            phone: user.phone,
+            avatar: user.avatar,
+            status: user.status,
+            emailVerified: user.emailVerified,
+            phoneVerified: user.phoneVerified,
+            createdAt: user.createdAt,
+            updatedAt: user.updatedAt,
+            studentId: user.studentId,
+            major: user.major,
+            companyName: user.companyName,
+            contactPerson: user.contactPerson
         }
 
         // NEW: Create secure session cookie for Admin after 2FA
@@ -130,3 +141,4 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Đã xảy ra lỗi xác thực" }, { status: 500 })
     }
 }
+

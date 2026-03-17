@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getCollection, COLLECTIONS } from "@/database/connection"
+import prisma from "@/database/prisma"
 
 export const dynamic = 'force-dynamic'
 
@@ -8,18 +8,22 @@ export async function GET(req: Request) {
         const { searchParams } = new URL(req.url)
         const page = searchParams.get("page") || "home"
 
-        const collection = await getCollection(COLLECTIONS.HERO_SLIDES)
-
-        let query: any = { isActive: true }
+        let where: any = { isActive: true }
         if (page !== "all") {
-            query.page = page
+            where.page = page
         }
 
-        const slides = await collection.find(query).sort({ order: 1, createdAt: -1 }).toArray()
+        const slides = await prisma.heroSlide.findMany({
+            where,
+            orderBy: [
+                { order: 'asc' },
+                { createdAt: 'desc' }
+            ]
+        })
 
         return NextResponse.json({
             success: true,
-            data: slides.map(s => ({ ...s, _id: s._id.toString() }))
+            data: slides.map(s => ({ ...s, _id: s.id }))
         })
     } catch (error) {
         console.error("Error fetching hero slides:", error)

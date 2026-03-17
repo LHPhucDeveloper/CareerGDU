@@ -3,27 +3,27 @@ import { Footer } from "@/components/layout/footer"
 import Link from "next/link"
 import { CompaniesListClient } from "@/components/companies/companies-list-client"
 
-import { getCollection, COLLECTIONS } from "@/database/connection"
-
-export const dynamic = "force-dynamic"
+import prisma from "@/database/prisma"
 
 async function getBannerData(): Promise<any> {
-  try {
-    const collection = await getCollection(COLLECTIONS.HERO_SLIDES)
-    const slide = await collection.findOne({ page: "companies", isActive: true })
+    try {
+        const slide = await prisma.heroSlide.findFirst({
+            where: { page: "companies", isActive: true }
+        })
 
-    if (slide) {
-      return {
-        ...slide,
-        _id: slide._id.toString()
-      }
+        if (slide) {
+            return {
+                ...slide,
+                _id: slide.id
+            }
+        }
+        return null
+    } catch (error) {
+        console.error("Error fetching companies banner from Prisma:", error)
+        return null
     }
-    return null
-  } catch (error) {
-    console.error("Error fetching companies banner:", error)
-    return null
-  }
 }
+
 
 export default async function CompaniesPage() {
   const banner = await getBannerData()

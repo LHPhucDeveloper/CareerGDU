@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getCollection, COLLECTIONS } from "../../../../database/connection"
+import prisma from "@/database/prisma"
 import crypto from "crypto"
 import { sendEmail } from "../../../../services/email.service"
 
@@ -16,23 +16,26 @@ function hashOTP(otp: string): string {
 export async function POST(request: Request) {
     try {
         const body = await request.json()
-        const { email, type } = body
+        const { email } = body
 
         if (!email) {
             return NextResponse.json({ error: "Thiếu địa chỉ email" }, { status: 400 })
         }
 
-        const collection = await getCollection(COLLECTIONS.USERS)
-        const pendingCollection = await getCollection(COLLECTIONS.PENDING_USERS)
+        const normalizedEmail = email.toLowerCase().trim()
 
         // 1. Check in verified users
-        let user = await collection.findOne({ email })
-        let targetCollection = collection
+        let user: any = await prisma.user.findUnique({
+            where: { email: normalizedEmail }
+        })
+        let isFromPending = false
 
         if (!user) {
             // 2. Check in pending users (new registrations)
-            user = await pendingCollection.findOne({ email })
-            targetCollection = pendingCollection
+            user = await prisma.pendingUser.findUnique({
+                where: { email: normalizedEmail }
+            })
+            isFromPending = true
         }
 
         if (!user) {
@@ -47,20 +50,28 @@ export async function POST(request: Request) {
         const hashedOTP = hashOTP(otp)
         const expiresAt = new Date(Date.now() + 5 * 60 * 1000) // 5 minutes
 
-        await targetCollection.updateOne(
-            { email },
-            {
-                $set: {
+        if (isFromPending) {
+            await prisma.pendingUser.update({
+                where: { email: normalizedEmail },
+                data: {
                     emailOtp: hashedOTP,
-                    emailOtpExpires: expiresAt,
-                },
-            }
-        )
+                    emailOtpExpires: expiresAt
+                }
+            })
+        } else {
+            await prisma.user.update({
+                where: { id: user.id },
+                data: {
+                    emailOtp: hashedOTP,
+                    emailOtpExpires: expiresAt
+                }
+            })
+        }
 
         // Send OTP email
         try {
             await sendEmail({
-                to: email,
+                to: normalizedEmail,
                 subject: "Mã xác minh tài khoản GDU Career",
                 html: `
                   <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -94,3 +105,4 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Lỗi máy chủ" }, { status: 500 })
     }
 }
+

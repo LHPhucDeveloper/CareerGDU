@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server"
-import { getCollection, COLLECTIONS } from "@/database/connection"
-import { ObjectId } from "mongodb"
+import prisma from "@/database/prisma"
 import crypto from "crypto"
 import QRCode from "qrcode"
 
@@ -85,16 +84,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Thiếu thông tin người dùng" }, { status: 400 })
         }
 
-        const collection = await getCollection(COLLECTIONS.USERS)
-
-        let query = {}
-        if (ObjectId.isValid(userId)) {
-            query = { _id: new ObjectId(userId) }
-        } else {
-            query = { id: userId }
-        }
-
-        const user = await collection.findOne(query)
+        const user = await prisma.user.findUnique({ where: { id: userId } })
 
         if (!user) {
             return NextResponse.json({ error: "Không tìm thấy người dùng" }, { status: 404 })
@@ -135,15 +125,13 @@ export async function POST(request: Request) {
         )
 
         // Store pending secret (not enabled yet until verified)
-        await collection.updateOne(
-            { _id: user._id },
-            {
-                $set: {
-                    pendingTotpSecret: secret,
-                    pendingRecoveryCodes: hashedRecoveryCodes
-                }
+        await prisma.user.update({
+            where: { id: userId },
+            data: {
+                pendingTotpSecret: secret,
+                pendingRecoveryCodes: hashedRecoveryCodes
             }
-        )
+        })
 
         return NextResponse.json({
             success: true,
@@ -168,16 +156,7 @@ export async function PUT(request: Request) {
             return NextResponse.json({ error: "Thiếu thông tin xác thực" }, { status: 400 })
         }
 
-        const collection = await getCollection(COLLECTIONS.USERS)
-
-        let query = {}
-        if (ObjectId.isValid(userId)) {
-            query = { _id: new ObjectId(userId) }
-        } else {
-            query = { id: userId }
-        }
-
-        const user = await collection.findOne(query)
+        const user = await prisma.user.findUnique({ where: { id: userId } })
 
         if (!user) {
             return NextResponse.json({ error: "Không tìm thấy người dùng" }, { status: 404 })
@@ -195,23 +174,16 @@ export async function PUT(request: Request) {
         }
 
         // Enable TOTP
-        await collection.updateOne(
-            { _id: user._id },
-            {
-                $set: {
-                    totpEnabled: true,
-                    totpSecret: user.pendingTotpSecret,
-                    recoveryCodes: user.pendingRecoveryCodes
-                },
-                $unset: {
-                    pendingTotpSecret: "",
-                    pendingRecoveryCodes: "",
-                    // Remove old email OTP fields
-                    twoFactorToken: "",
-                    twoFactorExpires: ""
-                }
+        await prisma.user.update({
+            where: { id: userId },
+            data: {
+                totpEnabled: true,
+                totpSecret: user.pendingTotpSecret,
+                recoveryCodes: user.pendingRecoveryCodes,
+                pendingTotpSecret: null,
+                pendingRecoveryCodes: null
             }
-        )
+        })
 
         return NextResponse.json({
             success: true,
@@ -235,16 +207,7 @@ export async function DELETE(request: Request) {
         }
 
         const bcrypt = await import("bcryptjs")
-        const collection = await getCollection(COLLECTIONS.USERS)
-
-        let query = {}
-        if (ObjectId.isValid(userId)) {
-            query = { _id: new ObjectId(userId) }
-        } else {
-            query = { id: userId }
-        }
-
-        const user = await collection.findOne(query)
+        const user = await prisma.user.findUnique({ where: { id: userId } })
 
         if (!user) {
             return NextResponse.json({ error: "Không tìm thấy người dùng" }, { status: 404 })
@@ -257,20 +220,16 @@ export async function DELETE(request: Request) {
         }
 
         // Disable TOTP
-        await collection.updateOne(
-            { _id: user._id },
-            {
-                $set: {
-                    totpEnabled: false
-                },
-                $unset: {
-                    totpSecret: "",
-                    recoveryCodes: "",
-                    pendingTotpSecret: "",
-                    pendingRecoveryCodes: ""
-                }
+        await prisma.user.update({
+            where: { id: userId },
+            data: {
+                totpEnabled: false,
+                totpSecret: null,
+                recoveryCodes: null,
+                pendingTotpSecret: null,
+                pendingRecoveryCodes: null
             }
-        )
+        })
 
         return NextResponse.json({
             success: true,
@@ -285,3 +244,4 @@ export async function DELETE(request: Request) {
 
 // Export TOTP functions for use in verify-2fa route
 export { verifyTOTP, base32Decode }
+

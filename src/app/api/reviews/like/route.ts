@@ -1,29 +1,31 @@
 import { NextResponse } from "next/server"
-import { getCollection, COLLECTIONS } from "@/database/connection"
-import { ObjectId } from "mongodb"
+import prisma from "@/database/prisma"
 
-// POST - Toggle like for a review
+// POST - Thích/Bỏ thích một bài đánh giá (Toggle)
 export async function POST(request: Request) {
     try {
         const body = await request.json()
-        const { reviewId, visitorId } = body
+        const { reviewId, visitorId: userId } = body
 
-        if (!reviewId || !visitorId) {
-            return NextResponse.json(
-                { success: false, error: "Missing reviewId or visitorId" },
-                { status: 400 }
-            )
+        if (!reviewId || !userId) {
+            return NextResponse.json({ success: false, error: "Missing reviewId or userId" }, { status: 400 })
         }
 
-        const collection = await getCollection(COLLECTIONS.REVIEW_LIKES)
-
-        // Check if user already liked this review
-        const existingLike = await collection.findOne({ reviewId, visitorId })
+        // Check if user already liked this review using unique constraint
+        const existingLike = await prisma.reviewLike.findUnique({
+            where: {
+                reviewId_userId: { reviewId, userId }
+            }
+        })
 
         if (existingLike) {
             // Unlike - remove the like
-            await collection.deleteOne({ _id: existingLike._id })
-            const totalLikes = await collection.countDocuments({ reviewId })
+            await prisma.reviewLike.delete({
+                where: {
+                    reviewId_userId: { reviewId, userId }
+                }
+            })
+            const totalLikes = await prisma.reviewLike.count({ where: { reviewId } })
             return NextResponse.json({
                 success: true,
                 liked: false,
@@ -32,12 +34,13 @@ export async function POST(request: Request) {
             })
         } else {
             // Like - add new like
-            await collection.insertOne({
-                reviewId,
-                visitorId,
-                createdAt: new Date()
+            await prisma.reviewLike.create({
+                data: {
+                    reviewId,
+                    userId
+                }
             })
-            const totalLikes = await collection.countDocuments({ reviewId })
+            const totalLikes = await prisma.reviewLike.count({ where: { reviewId } })
             return NextResponse.json({
                 success: true,
                 liked: true,
@@ -46,37 +49,34 @@ export async function POST(request: Request) {
             })
         }
     } catch (error) {
-        console.error("[API] Error toggling like:", error)
-        return NextResponse.json(
-            { success: false, error: "Failed to toggle like" },
-            { status: 500 }
-        )
+        console.error("Error toggling like:", error)
+        return NextResponse.json({ success: false, error: "Failed to toggle like" }, { status: 500 })
     }
 }
 
-// GET - Get likes for a review and check if user liked
+// GET - Lấy tổng số lượt thích và kiểm tra trạng thái thích của user
 export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url)
         const reviewId = searchParams.get("reviewId")
-        const visitorId = searchParams.get("visitorId")
+        const userId = searchParams.get("visitorId")
 
         if (!reviewId) {
-            return NextResponse.json(
-                { success: false, error: "Missing reviewId" },
-                { status: 400 }
-            )
+            return NextResponse.json({ success: false, error: "Missing reviewId" }, { status: 400 })
         }
 
-        const collection = await getCollection(COLLECTIONS.REVIEW_LIKES)
-
-        const totalLikes = await collection.countDocuments({ reviewId })
+        const totalLikes = await prisma.reviewLike.count({ where: { reviewId } })
 
         let liked = false
-        if (visitorId) {
-            const existingLike = await collection.findOne({ reviewId, visitorId })
+        if (userId) {
+            const existingLike = await prisma.reviewLike.findUnique({
+                where: {
+                    reviewId_userId: { reviewId, userId }
+                }
+            })
             liked = !!existingLike
         }
+
 
         return NextResponse.json({
             success: true,
@@ -84,10 +84,8 @@ export async function GET(request: Request) {
             liked
         })
     } catch (error) {
-        console.error("[API] Error getting likes:", error)
-        return NextResponse.json(
-            { success: false, error: "Failed to get likes" },
-            { status: 500 }
-        )
+        console.error("Error getting likes:", error)
+        return NextResponse.json({ success: false, error: "Failed to get likes" }, { status: 500 })
     }
 }
+

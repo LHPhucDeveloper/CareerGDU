@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getCollection, COLLECTIONS } from "@/database/connection"
+import prisma from "@/database/prisma"
 
 export async function POST(req: Request) {
     try {
@@ -9,13 +9,17 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Thiếu thông tin" }, { status: 400 })
         }
 
-        const collection = await getCollection(COLLECTIONS.USERS)
+        const normalizedEmail = email.toLowerCase().trim()
 
         // Find user with matching email, OTP and valid expiration
-        const user = await collection.findOne({
-            email: email,
-            resetPasswordToken: otp,
-            resetPasswordExpires: { $gt: new Date() }
+        const user = await prisma.user.findFirst({
+            where: {
+                email: normalizedEmail,
+                resetToken: otp,
+                resetTokenExpiry: {
+                    gt: new Date()
+                }
+            }
         })
 
         if (!user) {
@@ -29,3 +33,4 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Đã xảy ra lỗi" }, { status: 500 })
     }
 }
+

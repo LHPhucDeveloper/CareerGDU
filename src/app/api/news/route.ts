@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server"
-import { getCollection, COLLECTIONS } from "@/database/connection"
-import { ObjectId } from "mongodb"
+import prisma from "@/database/prisma"
 
 export const dynamic = 'force-dynamic'
 
@@ -11,67 +10,72 @@ export async function GET(req: Request) {
         const category = searchParams.get("category")
         const id = searchParams.get("id")
 
-        const collection = await getCollection(COLLECTIONS.NEWS)
-
         if (id) {
-            const item = await collection.findOne({ _id: new ObjectId(id) })
+            const item = await prisma.news.findUnique({
+                where: { id }
+            })
             if (!item) return NextResponse.json({ success: false, error: "News not found" }, { status: 404 })
-            return NextResponse.json({ success: true, data: { ...item, _id: item._id.toString() } })
+            return NextResponse.json({ success: true, data: { ...item, _id: item.id } })
         }
 
-        let query: any = {}
+        let where: any = {}
         if (category && category !== "all" && category !== "Tất cả") {
-            query.category = { $regex: category, $options: 'i' }
+            where.category = { contains: category }
         }
 
-        const news = await collection
-            .find(query)
-            .sort({ publishedAt: -1 })
-            .limit(limit)
-            .toArray()
-
-        const mappedNews = news.map(item => ({
-            ...item,
-            _id: item._id.toString()
-        }))
+        const news = await prisma.news.findMany({
+            where,
+            orderBy: {
+                publishedAt: 'desc'
+            },
+            take: limit
+        })
 
         return NextResponse.json({
             success: true,
-            data: mappedNews
+            data: news.map(item => ({
+                ...item,
+                _id: item.id
+            }))
         })
     } catch (error) {
         console.error("Error fetching news:", error)
-        return NextResponse.json(
-            { success: false, error: "Failed to fetch news" },
-            { status: 500 }
-        )
+        return NextResponse.json({ success: false, error: "Failed to fetch news" }, { status: 500 })
     }
 }
 
 export async function POST(req: Request) {
     try {
         const body = await req.json()
-        const collection = await getCollection(COLLECTIONS.NEWS)
+        const { title, content, category, image, author } = body
 
-        const newsItem = {
-            ...body,
-            publishedAt: new Date().toISOString(),
-            views: 0,
-            slug: body.title.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w ]+/g, '').replace(/ +/g, '-'),
+        if (!title || !content || !category) {
+            return NextResponse.json({ success: false, error: "Missing required fields" }, { status: 400 })
         }
 
-        const result = await collection.insertOne(newsItem)
+        const slug = title.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w ]+/g, '').replace(/ +/g, '-')
+
+        const newsItem = await prisma.news.create({
+            data: {
+                title,
+                content,
+                category,
+                image,
+                author,
+                slug,
+                views: 0,
+                publishedAt: new Date(),
+                status: 'published'
+            }
+        })
 
         return NextResponse.json({
             success: true,
-            data: { ...newsItem, _id: result.insertedId.toString() }
+            data: { ...newsItem, _id: newsItem.id }
         })
     } catch (error) {
         console.error("Error creating news:", error)
-        return NextResponse.json(
-            { success: false, error: "Failed to create news" },
-            { status: 500 }
-        )
+        return NextResponse.json({ success: false, error: "Failed to create news" }, { status: 500 })
     }
 }
 
@@ -81,37 +85,45 @@ export async function DELETE(req: Request) {
         const id = searchParams.get("id")
         if (!id) return NextResponse.json({ success: false, error: "Missing ID" }, { status: 400 })
 
-        const collection = await getCollection(COLLECTIONS.NEWS)
-        await collection.deleteOne({ _id: new ObjectId(id) })
+        await prisma.news.delete({
+            where: { id }
+        })
 
         return NextResponse.json({ success: true, message: "News deleted successfully" })
     } catch (error) {
         console.error("Error deleting news:", error)
-        return NextResponse.json(
-            { success: false, error: "Failed to delete news" },
-            { status: 500 }
-        )
+        return NextResponse.json({ success: false, error: "Failed to delete news" }, { status: 500 })
     }
 }
 
 export async function PATCH(req: Request) {
     try {
         const body = await req.json()
-        const { _id, ...updateData } = body
-        if (!_id) return NextResponse.json({ success: false, error: "Missing ID" }, { status: 400 })
+        const { _id, id, ...updateData } = body
+        const targetId = id || _id
 
-        const collection = await getCollection(COLLECTIONS.NEWS)
-        await collection.updateOne(
-            { _id: new ObjectId(_id) },
-            { $set: updateData }
-        )
+        if (!targetId) return NextResponse.json({ success: false, error: "Missing ID" }, { status: 400 })
+
+        const cleanData: any = {}
+        const allowedFields = ['title', 'content', 'category', 'image', 'author', 'views', 'slug', 'status']
+        allowedFields.forEach(field => {
+            if (updateData[field] !== undefined) cleanData[field] = updateData[field]
+        })
+
+        if (cleanData.title) {
+            cleanData.slug = cleanData.title.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w ]+/g, '').replace(/ +/g, '-')
+        }
+
+        await prisma.news.update({
+            where: { id: targetId },
+            data: cleanData
+        })
 
         return NextResponse.json({ success: true, message: "News updated successfully" })
     } catch (error) {
         console.error("Error updating news:", error)
-        return NextResponse.json(
-            { success: false, error: "Failed to update news" },
-            { status: 500 }
-        )
+        return NextResponse.json({ success: false, error: "Failed to update news" }, { status: 500 })
     }
 }
+
+

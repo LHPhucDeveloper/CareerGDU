@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getCollection, COLLECTIONS } from "@/database/connection"
+import prisma from "@/database/prisma"
 import bcrypt from "bcryptjs"
 
 export const dynamic = 'force-dynamic'
@@ -19,34 +19,47 @@ export async function GET(request: Request) {
             return NextResponse.json({ success: false, error: "Unauthorized: Access Denied" }, { status: 403 })
         }
 
-        const collection = await getCollection(COLLECTIONS.USERS)
-
-        let query: any = {}
+        const where: any = {}
         if (role && role !== 'all') {
-            query.role = role
+            where.role = role
         }
 
-        // Project ONLY safe fields
-        const safeProjection = {
-            password: 0,
-            totpSecret: 0,
-            recoveryCodes: 0,
-            totpEnabled: 0,
-            __v: 0
-        }
-
-        const users = await collection
-            .find(query)
-            .sort({ createdAt: -1 })
-            .project(safeProjection)
-            .toArray()
+        const users = await prisma.user.findMany({
+            where,
+            orderBy: {
+                createdAt: 'desc'
+            },
+            select: {
+                id: true,
+                name: true,
+                email: true,
+                role: true,
+                phone: true,
+                avatar: true,
+                status: true,
+                emailVerified: true,
+                phoneVerified: true,
+                createdAt: true,
+                updatedAt: true,
+                studentId: true,
+                major: true,
+                faculty: true,
+                cohort: true,
+                companyName: true,
+                website: true,
+                address: true,
+                description: true,
+                size: true,
+                contactPerson: true,
+                industry: true
+            }
+        })
 
         return NextResponse.json({
             success: true,
             users: users.map(user => ({
                 ...user,
-                _id: user._id.toString(),
-                id: user._id.toString()
+                _id: user.id
             })),
         })
     } catch (error) {
@@ -70,8 +83,10 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Vui lòng nhập đầy đủ thông tin" }, { status: 400 })
         }
 
-        const collection = await getCollection(COLLECTIONS.USERS)
-        const existingUser = await collection.findOne({ email })
+        const normalizedEmail = email.toLowerCase().trim()
+        const existingUser = await prisma.user.findUnique({
+            where: { email: normalizedEmail }
+        })
 
         if (existingUser) {
             return NextResponse.json({ error: "Email này đã được sử dụng." }, { status: 409 })
@@ -79,32 +94,26 @@ export async function POST(request: Request) {
 
         const hashedPassword = await bcrypt.hash(password, 10)
 
-        const newUser = {
-            name,
-            email,
-            password: hashedPassword,
-            role,
-            emailVerified: true,
-
-            // 🔐 Chỉ admin mới có 2FA
-            totpEnabled: role === "admin" ? false : undefined,
-            // totpSecret: role === "admin" ? null : undefined,
-            // recoveryCodes: role === "admin" ? [] : undefined,
-
-            avatar: `/placeholder.svg?height=100&width=100&query=${encodeURIComponent(name)}`,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-        }
-
-        const result = await collection.insertOne(newUser)
+        const newUser = await prisma.user.create({
+            data: {
+                name,
+                email: normalizedEmail,
+                password: hashedPassword,
+                role,
+                emailVerified: true,
+                avatar: `/placeholder.svg?height=100&width=100&query=${encodeURIComponent(name)}`,
+                status: "active" // Assuming direct creations are active
+            }
+        })
 
         return NextResponse.json({
             success: true,
             message: "Tạo tài khoản thành công!",
-            userId: result.insertedId.toString()
+            userId: newUser.id
         })
     } catch (error) {
         console.error("Create user error:", error)
         return NextResponse.json({ success: false, error: "Failed to create user" }, { status: 500 })
     }
 }
+

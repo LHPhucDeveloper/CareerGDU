@@ -497,17 +497,17 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* MongoDB Info */}
+            {/* Database Info - MySQL/Prisma */}
             <div className="pt-6 border-t border-gray-50">
               <div className="flex items-center gap-2 mb-4">
                 <div className="h-4 w-1 bg-primary rounded-full" />
-                <Label className="text-lg font-black text-gray-800">Kết nối MongoDB</Label>
+                <Label className="text-lg font-black text-gray-800">Cơ sở dữ liệu MySQL</Label>
               </div>
               <div className="bg-gray-900 shadow-2xl shadow-gray-900/10 p-6 rounded-3xl space-y-3 font-mono text-sm relative overflow-hidden group">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -mr-16 -mt-16 group-hover:scale-110 transition-transform duration-500" />
                 <p className="flex items-center gap-3">
-                  <span className="text-gray-500 font-black min-w-[80px]">SERVER</span>
-                  <span className="text-blue-400 font-bold">mongodb://localhost:27017</span>
+                  <span className="text-gray-500 font-black min-w-[80px]">ENGINE</span>
+                  <span className="text-blue-400 font-bold">MySQL Server (via Prisma)</span>
                 </p>
                 <p className="flex items-center gap-3">
                   <span className="text-gray-500 font-black min-w-[80px]">DATABASE</span>
@@ -517,11 +517,12 @@ export default function SettingsPage() {
                   <span className="text-gray-500 font-black min-w-[80px]">STATUS</span>
                   <div className="flex items-center gap-2 bg-green-500/10 px-3 py-1 rounded-full border border-green-500/20">
                     <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse" />
-                    <span className="text-green-500 text-xs font-black uppercase tracking-widest">Connected</span>
+                    <span className="text-green-500 text-xs font-black uppercase tracking-widest">Active & Connected</span>
                   </div>
                 </div>
               </div>
             </div>
+
           </CardContent>
         </Card>
       )}

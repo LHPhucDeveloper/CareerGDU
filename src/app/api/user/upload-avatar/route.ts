@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server"
-import { getCollection, COLLECTIONS } from "@/database/connection"
-import { ObjectId } from "mongodb"
+import prisma from "@/database/prisma"
 import { saveFile } from "@/lib/storage"
 
 export async function POST(request: Request) {
@@ -23,15 +22,14 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Invalid file type. Only JPG, PNG, WEBP, GIF allowed." }, { status: 400 })
         }
 
-        // Tối ưu: Lưu ảnh vào Local Storage thay vì Base64
+        // Save image to Local Storage
         const avatarUrl = await saveFile(file, "avatars")
 
-        // Update user in MongoDB with local file path URL
-        const collection = await getCollection(COLLECTIONS.USERS)
-        await collection.updateOne(
-            { _id: new ObjectId(userId) },
-            { $set: { avatar: avatarUrl, updatedAt: new Date() } }
-        )
+        // Update user in MySQL using Prisma
+        await prisma.user.update({
+            where: { id: userId },
+            data: { avatar: avatarUrl }
+        })
 
         return NextResponse.json({
             success: true,
@@ -44,3 +42,4 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Upload failed" }, { status: 500 })
     }
 }
+
