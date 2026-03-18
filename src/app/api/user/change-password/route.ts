@@ -1,19 +1,11 @@
 import { NextResponse } from "next/server"
-import { getCollection, COLLECTIONS } from "@/database/connection"
-import { ObjectId } from "mongodb"
+import prisma from "@/database/prisma"
 import bcrypt from "bcryptjs"
 
 export async function POST(request: Request) {
     try {
         const body = await request.json()
         const { userId, currentPassword, newPassword, otp } = body
-
-        console.log("[API] Change Password Request:", {
-            userId,
-            hasCurrentPass: !!currentPassword,
-            hasNewPass: !!newPassword,
-            hasOtp: !!otp
-        })
 
         if (!userId || !currentPassword || !newPassword) {
             return NextResponse.json(
@@ -29,12 +21,12 @@ export async function POST(request: Request) {
             )
         }
 
-        // Get user from database
-        const collection = await getCollection(COLLECTIONS.USERS)
-        const user = await collection.findOne({ _id: new ObjectId(userId) })
+        // Get user from database using Prisma
+        const user = await prisma.user.findUnique({
+            where: { id: userId }
+        })
 
         if (!user) {
-            console.log("[API] User not found for ID:", userId)
             return NextResponse.json(
                 { error: "Không tìm thấy người dùng" },
                 { status: 404 }
@@ -45,7 +37,6 @@ export async function POST(request: Request) {
         const isPasswordValid = await bcrypt.compare(currentPassword, user.password)
 
         if (!isPasswordValid) {
-            console.log("[API] Invalid current password for user:", userId)
             return NextResponse.json(
                 { error: "Mật khẩu hiện tại không đúng" },
                 { status: 401 }
@@ -62,7 +53,11 @@ export async function POST(request: Request) {
             }
 
             // Verify OTP
-            if (user.passwordChangeOtp !== otp || !user.passwordChangeOtpExpires || new Date() > new Date(user.passwordChangeOtpExpires)) {
+            const isOtpValid = user.passwordChangeOtp === otp && 
+                               user.passwordChangeOtpExpires && 
+                               new Date() < new Date(user.passwordChangeOtpExpires)
+
+            if (!isOtpValid) {
                 return NextResponse.json(
                     { error: "Mã OTP không chính xác hoặc đã hết hạn" },
                     { status: 400 }
@@ -73,20 +68,15 @@ export async function POST(request: Request) {
         // Hash new password
         const hashedPassword = await bcrypt.hash(newPassword, 10)
 
-        // Update password in database and clear OTP tokens
-        await collection.updateOne(
-            { _id: new ObjectId(userId) },
-            {
-                $set: {
-                    password: hashedPassword,
-                    updatedAt: new Date()
-                },
-                $unset: {
-                    passwordChangeOtp: "",
-                    passwordChangeOtpExpires: ""
-                }
+        // Update password and clear OTP tokens using Prisma
+        await prisma.user.update({
+            where: { id: userId },
+            data: {
+                password: hashedPassword,
+                passwordChangeOtp: null,
+                passwordChangeOtpExpires: null
             }
-        )
+        })
 
         return NextResponse.json({
             success: true,
@@ -101,3 +91,4 @@ export async function POST(request: Request) {
         )
     }
 }
+

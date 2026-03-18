@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server"
-import { getCollection, COLLECTIONS } from "@/database/connection"
-import { ObjectId } from "mongodb"
+import prisma from "@/database/prisma"
 import { sendEmail } from "@/services/email.service"
 
 // Request OTP for password change
@@ -16,8 +15,9 @@ export async function POST(request: Request) {
             )
         }
 
-        const collection = await getCollection(COLLECTIONS.USERS)
-        const user = await collection.findOne({ _id: new ObjectId(userId) })
+        const user = await prisma.user.findUnique({
+            where: { id: userId }
+        })
 
         if (!user) {
             return NextResponse.json(
@@ -30,15 +30,13 @@ export async function POST(request: Request) {
         const otp = Math.floor(100000 + Math.random() * 900000).toString()
         const otpExpires = new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
 
-        await collection.updateOne(
-            { _id: user._id },
-            {
-                $set: {
-                    passwordChangeOtp: otp,
-                    passwordChangeOtpExpires: otpExpires
-                }
+        await prisma.user.update({
+            where: { id: userId },
+            data: {
+                passwordChangeOtp: otp,
+                passwordChangeOtpExpires: otpExpires
             }
-        )
+        })
 
         // Send OTP email
         await sendEmail({
@@ -47,10 +45,10 @@ export async function POST(request: Request) {
             html: `
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
                     <div style="text-align: center; margin-bottom: 20px;">
-                        <img src="${process.env.NEXT_PUBLIC_APP_URL}/gdu-logo.png" alt="GDU Logo" style="height: 60px; width: auto;">
+                        <img src="cid:gdu-logo" alt="GDU Logo" style="height: 60px; width: auto;">
                     </div>
                     <h2 style="color: #d32f2f; text-align: center;">Mã xác thực đổi mật khẩu</h2>
-                    <p>Xin chào <strong>${user.fullName || user.email}</strong>,</p>
+                    <p>Xin chào <strong>${user.name || user.email}</strong>,</p>
                     <p>Bạn đang yêu cầu đổi mật khẩu tài khoản. Vui lòng sử dụng mã OTP dưới đây để xác nhận:</p>
                     <div style="text-align: center; margin: 30px 0;">
                         <span style="background-color: #f5f5f5; color: #333; padding: 15px 30px; font-size: 24px; font-weight: bold; letter-spacing: 5px; border-radius: 5px; border: 1px solid #ccc;">${otp}</span>
@@ -74,3 +72,4 @@ export async function POST(request: Request) {
         )
     }
 }
+

@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server"
-import { getCollection, COLLECTIONS } from "@/database/connection"
+import prisma from "@/database/prisma"
 import { sendEmail } from "@/services/email.service"
-import { ObjectId } from "mongodb"
 import { checkNotificationPreference } from "@/lib/notification-utils"
+import { saveBase64Image } from "@/lib/storage"
 
 export async function POST(request: Request) {
   try {
@@ -26,13 +26,12 @@ export async function POST(request: Request) {
     const applicantId = formData.get("applicantId") as string // User ID for notifications
 
     // Verify applicant still exists if logged in
-    if (applicantId && ObjectId.isValid(applicantId)) {
-      const usersCollection = await getCollection(COLLECTIONS.USERS)
-      const userExists = await usersCollection.findOne({ _id: new ObjectId(applicantId) })
-      if (!userExists) {
+    if (applicantId) {
+      const user = await prisma.user.findUnique({ where: { id: applicantId } })
+      if (!user) {
         return NextResponse.json({ error: "Tài khoản của bạn không tồn tại hoặc đã bị xóa. Vui lòng đăng xuất và đăng ký lại." }, { status: 401 })
       }
-      if (userExists.role === "employer" || userExists.role === "admin") {
+      if (user.role === "employer" || user.role === "admin") {
         return NextResponse.json({ error: "Nhà tuyển dụng hoặc quản trị viên không thể ứng tuyển công việc." }, { status: 403 })
       }
     }
@@ -42,19 +41,7 @@ export async function POST(request: Request) {
     // Always lookup job if jobId provided for security and deadline validation
     if (jobId) {
       try {
-        const jobsCollection = await getCollection(COLLECTIONS.JOBS)
-        let job = null
-        try {
-          if (ObjectId.isValid(jobId)) {
-            job = await jobsCollection.findOne({ _id: new ObjectId(jobId) })
-          }
-        } catch (e) {
-          console.error("[Applications API] Invalid ObjectId:", jobId)
-        }
-
-        if (!job) {
-          job = await jobsCollection.findOne({ _id: jobId as any })
-        }
+        const job = await prisma.job.findUnique({ where: { id: jobId } })
 
         if (job) {
           // 1. Sync employerId
@@ -65,35 +52,11 @@ export async function POST(request: Request) {
 
           // 2. Strict Deadline validation
           if (job.deadline) {
-            const parseDateHelper = (dateVal: any): number => {
-              if (!dateVal) return 0
-              try {
-                if (dateVal instanceof Date) return dateVal.getTime()
-                if (typeof dateVal === 'string') {
-                  if (dateVal.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
-                    const [day, month, year] = dateVal.split('/').map(Number)
-                    return new Date(year, month - 1, day).getTime()
-                  }
-                  const date = new Date(dateVal)
-                  return isNaN(date.getTime()) ? 0 : date.getTime()
-                }
-                const date = new Date(dateVal)
-                return isNaN(date.getTime()) ? 0 : date.getTime()
-              } catch {
-                return 0
-              }
-            }
-
-            const timeDeadline = parseDateHelper(job.deadline)
-            // Adjust to end of day if it's DD/MM/YYYY (optional, but keep it consistent for now)
-            // For now, simple check is enough as per front-end
+            const timeDeadline = new Date(job.deadline).getTime()
             if (timeDeadline > 0 && timeDeadline < new Date().getTime()) {
               return NextResponse.json({ error: "Công việc này đã hết hạn nhận hồ sơ." }, { status: 403 })
             }
           }
-
-          // 3. Optional: Check if job is full (quantity vs hiredCount)
-          // This would require another lookup for hiredCount, but let's stick to deadline for now.
         }
       } catch (lookupError) {
         console.error("[Applications API] Error looking up job:", lookupError)
@@ -103,7 +66,7 @@ export async function POST(request: Request) {
     // Extract file
     const file = formData.get("cv") as File | null
 
-    // Validate required fields (file is now optional)
+    // Validate required fields
     if (!fullname || !email || !phone || !mssv || !major) {
       return NextResponse.json({ error: "Thiếu thông tin bắt buộc" }, { status: 400 })
     }
@@ -119,7 +82,7 @@ export async function POST(request: Request) {
     let cvMimeType = null
 
     // Process file only if it exists
-    if (file && file.size > 0 && typeof file.arrayBuffer === 'function') {
+    if (file && file.size > 0) {
       // Validate file type
       const validTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
       if (!validTypes.includes(file.type)) {
@@ -140,112 +103,100 @@ export async function POST(request: Request) {
       cvMimeType = file.type
     }
 
-    const applicationsCollection = await getCollection(COLLECTIONS.APPLICATIONS)
-
-    const applicationData = {
-      jobId,
-      jobTitle,
-      companyName,
-      employerId: employerId || null,
-      applicantId: applicantId || null,
-      fullname,
-      email,
-      phone,
-      mssv,
-      major,
-      faculty,
-      cohort,
-      message,
-      cvBase64: cvDataUrl,
-      cvOriginalName: cvOriginalName,
-      cvMimeType: cvMimeType,
-      createdAt: new Date(),
-      status: "new",
+    // Tối ưu: Lưu tệp CV vào Local Storage
+    let cvPath = null
+    if (cvDataUrl) {
+      cvPath = await saveBase64Image(cvDataUrl, "cvs")
     }
 
-    const result = await applicationsCollection.insertOne(applicationData)
-    const applicationId = result.insertedId.toString()
-
-    // Increment applicants count on the job
-    if (jobId) {
-      try {
-        const jobsCollection = await getCollection(COLLECTIONS.JOBS)
-        // Try ObjectId first, then string
-        try {
-          await jobsCollection.updateOne(
-            { _id: new ObjectId(jobId) },
-            { $inc: { applicants: 1 } }
-          )
-        } catch {
-          await jobsCollection.updateOne(
-            { _id: jobId as any },
-            { $inc: { applicants: 1 } }
-          )
+    // Start Transaction to create application and update job count
+    const result = await prisma.$transaction(async (tx) => {
+      const app = await tx.application.create({
+        data: {
+          jobId,
+          jobTitle,
+          companyName,
+          employerId: employerId || null,
+          applicantId: applicantId || null,
+          fullname,
+          email,
+          phone,
+          mssv,
+          major,
+          faculty: faculty || null,
+          cohort: cohort || null,
+          message: message || null,
+          status: "new",
+          cvPath: cvPath,
+          cvOriginalName: cvOriginalName,
+          cvMimeType: cvMimeType
         }
-        console.log("[Applications API] Incremented applicants count for job:", jobId)
-      } catch (incError) {
-        console.error("[Applications API] Failed to increment applicants count:", incError)
+      })
+
+      // Increment applicants count
+      if (jobId) {
+        await tx.job.update({
+          where: { id: jobId },
+          data: { applicants: { increment: 1 } }
+        })
       }
-    }
+
+      return app
+    })
+
+    const applicationId = result.id
 
     // Create Notifications
-    const notificationsCollection = await getCollection(COLLECTIONS.NOTIFICATIONS)
-
     // 1. Notification for Admin
     try {
-      await notificationsCollection.insertOne({
-        targetRole: 'admin',
-        type: 'job',
-        title: 'Hồ sơ ứng tuyển mới',
-        message: `${fullname} vừa ứng tuyển vị trí ${jobTitle} tại ${companyName}`,
-        read: false,
-        createdAt: new Date(),
-        link: `/dashboard/applicants-manager?id=${applicationId}`,
-        applicationId: applicationId
+      await prisma.notification.create({
+        data: {
+          targetRole: 'admin',
+          type: 'job',
+          title: 'Hồ sơ ứng tuyển mới',
+          message: `${fullname} vừa ứng tuyển vị trí ${jobTitle} tại ${companyName}`,
+          read: false,
+          link: `/dashboard/applicants-manager?id=${applicationId}`,
+          applicationId: applicationId
+        }
       })
-      console.log("[Applications API] Created admin notification")
     } catch (notifError) {
       console.error("Failed to create admin notification:", notifError)
     }
 
-    // 2. Notification for Employer (if employerId exists)
-    // Only send if the applicant is NOT the employer themselves (self-application)
+    // 2. Notification for Employer
     if (employerId && employerId !== applicantId) {
       try {
-        await notificationsCollection.insertOne({
-          userId: employerId,
-          type: 'job',
-          title: 'Ứng viên mới ứng tuyển',
-          message: `${fullname} vừa ứng tuyển vị trí ${jobTitle}`,
-          read: false,
-          createdAt: new Date(),
-          link: `/dashboard/applicants-manager?id=${applicationId}`,
-          applicationId: applicationId
+        await prisma.notification.create({
+          data: {
+            userId: employerId,
+            type: 'job',
+            title: 'Ứng viên mới ứng tuyển',
+            message: `${fullname} vừa ứng tuyển vị trí ${jobTitle}`,
+            read: false,
+            link: `/dashboard/applicants-manager?id=${applicationId}`,
+            applicationId: applicationId
+          }
         })
-        console.log("[Applications API] Created employer notification for:", employerId)
       } catch (notifError) {
         console.error("Failed to create employer notification:", notifError)
       }
-    } else if (!employerId) {
-      // If no employerId (Static/System Job), we don't broadcast to all employers anymore
-      // Only the Admin notification (created above) is sufficient for system jobs
-      console.log("[Applications API] No employerId found, skipping employer broadcast.")
     }
 
-    // 3. Notification for Student/Applicant (if applicantId exists - logged in user)
+    // 3. Notification for Student/Applicant
     if (applicantId) {
       try {
-        await notificationsCollection.insertOne({
-          userId: applicantId,
-          type: 'job',
-          title: 'Ứng tuyển thành công',
-          message: `Bạn đã ứng tuyển thành công vào vị trí ${jobTitle} tại ${companyName}. Chúc bạn may mắn!`,
-          read: false,
-          createdAt: new Date(),
-          link: `/dashboard/applications`,
-          applicationId: applicationId
+        await prisma.notification.create({
+          data: {
+            userId: applicantId,
+            type: 'job',
+            title: 'Ứng tuyển thành công',
+            message: `Bạn đã ứng tuyển thành công vào vị trí ${jobTitle} tại ${companyName}. Chúc bạn may mắn!`,
+            read: false,
+            link: `/dashboard/applications`,
+            applicationId: applicationId
+          }
         })
-        console.log("[Applications API] Created student notification for:", applicantId)
       } catch (notifError) {
         console.error("Failed to create student notification:", notifError)
       }
@@ -286,68 +237,35 @@ export async function POST(request: Request) {
             </a>
           </div>
         </div>
-        <div style="padding: 15px; text-align: center; color: #666; font-size: 12px;">
-          <p>Email này được gửi tự động từ GDU Career Portal</p>
-        </div>
       </div>
     `
 
-    // Send email to admin
-    try {
-      if (process.env.ADMIN_EMAIL) {
-        // Look up admin user to check preference
-        const usersCollection = await getCollection(COLLECTIONS.USERS)
-        const adminUser = await usersCollection.findOne({ email: process.env.ADMIN_EMAIL })
-        const shouldSendAdminEmail = await checkNotificationPreference(adminUser?._id, 'email')
-
+    // Send emails
+    if (process.env.ADMIN_EMAIL) {
+      try {
+        const adminUser = await prisma.user.findUnique({ where: { email: process.env.ADMIN_EMAIL } })
+        const shouldSendAdminEmail = await checkNotificationPreference(adminUser?.id, 'email')
         if (shouldSendAdminEmail) {
-          await sendEmail({
-            to: process.env.ADMIN_EMAIL,
-            subject: emailSubject,
-            html: emailHtml
-          })
-          console.log("[Applications API] Admin email sent")
-        } else {
-          console.log("[Applications API] Admin email skipped (preference off)")
+          await sendEmail({ to: process.env.ADMIN_EMAIL, subject: emailSubject, html: emailHtml })
         }
-      }
-    } catch (emailError) {
-      console.error("Failed to send admin email:", emailError)
+      } catch (err) { console.error("Admin email failed", err) }
     }
 
-    // Send email to employer (if we have their email)
     if (employerId) {
       try {
-        const usersCollection = await getCollection(COLLECTIONS.USERS)
-        const { ObjectId } = await import("mongodb")
-        const employer = await usersCollection.findOne({ _id: new ObjectId(employerId) })
-
+        const employer = await prisma.user.findUnique({ where: { id: employerId } })
         if (employer?.email) {
           const shouldSendEmployerEmail = await checkNotificationPreference(employerId, 'email')
-
           if (shouldSendEmployerEmail) {
-            await sendEmail({
-              to: employer.email,
-              subject: emailSubject,
-              html: emailHtml
-            })
-            console.log("[Applications API] Employer email sent to:", employer.email)
-          } else {
-            console.log("[Applications API] Employer email skipped (preference off) for:", employer.email)
+            await sendEmail({ to: employer.email, subject: emailSubject, html: emailHtml })
           }
         }
-      } catch (emailError) {
-        console.error("Failed to send employer email:", emailError)
-      }
+      } catch (err) { console.error("Employer email failed", err) }
     }
 
     return NextResponse.json(
-      {
-        success: true,
-        message: "Ứng tuyển thành công",
-        applicationId: applicationId
-      },
-      { status: 200 },
+      { success: true, message: "Ứng tuyển thành công", applicationId: applicationId },
+      { status: 200 }
     )
   } catch (error) {
     console.error("Application submission error:", error)
@@ -360,7 +278,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const jobId = searchParams.get("jobId")
 
-    // Get session for server-side auth
+    // Get session
     const { cookies } = await import("next/headers")
     const { decrypt } = await import("@/lib/session")
     const cookieStore = await cookies()
@@ -374,72 +292,66 @@ export async function GET(request: Request) {
     const userId = session.userId as string
     const userRole = session.role as string
 
-    const collection = await getCollection(COLLECTIONS.APPLICATIONS)
-    let query: Record<string, any> = {}
-    const queryParts: any[] = []
+    let where: any = {}
 
     if (userRole === "admin") {
       // Admins see everything
     } else if (userRole === "employer") {
-      // Employers see applications for their jobs
-      queryParts.push({
-        $or: [
-          { employerId: userId },
-          { employerId: new ObjectId(userId) }
-        ]
-      })
+      where.employerId = userId
     } else {
-      // Students see only their own applications
-      // For students, we match by applicantId (preferred) or email (fallback)
-      const usersCollection = await getCollection(COLLECTIONS.USERS)
-      const currentUser = await usersCollection.findOne({ _id: new ObjectId(userId) })
-
-      if (currentUser) {
-        queryParts.push({
-          $or: [
-            { applicantId: userId },
-            { applicantId: new ObjectId(userId) },
-            { email: currentUser.email }
-          ]
-        })
-      } else {
-        return NextResponse.json({ success: true, data: [] })
-      }
+      // Student: Match by applicantId or email (fallback)
+      const currentUser = await prisma.user.findUnique({ where: { id: userId } })
+      if (!currentUser) return NextResponse.json({ success: true, data: [] })
+      
+      where.OR = [
+        { applicantId: userId },
+        { email: currentUser.email }
+      ]
     }
 
-    // Add jobId filter if provided
     if (jobId) {
-      if (ObjectId.isValid(jobId)) {
-        queryParts.push({
-          $or: [
-            { jobId: jobId },
-            { jobId: new ObjectId(jobId) }
-          ]
-        })
-      } else {
-        queryParts.push({ jobId: jobId })
+      where.jobId = jobId
+    }
+
+    const applications = await prisma.application.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        jobId: true,
+        jobTitle: true,
+        companyName: true,
+        employerId: true,
+        applicantId: true,
+        fullname: true,
+        email: true,
+        phone: true,
+        mssv: true,
+        major: true,
+        faculty: true,
+        cohort: true,
+        message: true,
+        status: true,
+        createdAt: true,
+        cvOriginalName: true,
+        cvMimeType: true,
+        cvPath: true
       }
-    }
+    })
 
-    if (queryParts.length === 1) {
-      query = queryParts[0]
-    } else if (queryParts.length > 1) {
-      query = { $and: queryParts }
-    }
-
-    // Don't return cvBase64 in list to save bandwidth
-    const applications = await collection
-      .find(query)
-      .project({ cvBase64: 0 })
-      .sort({ createdAt: -1 })
-      .toArray()
+    // To maintain compatibility with MongoDB _id
+    const mappedApplications = applications.map(app => ({
+      ...app,
+      _id: app.id
+    }))
 
     return NextResponse.json({
       success: true,
-      data: applications
+      data: mappedApplications
     })
   } catch (error) {
     console.error("Fetch applications error:", error)
     return NextResponse.json({ error: "Failed to fetch applications" }, { status: 500 })
   }
 }
+

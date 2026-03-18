@@ -1,17 +1,22 @@
 import { NextResponse } from "next/server"
-import { getCollection, COLLECTIONS } from "@/database/connection"
-import { ObjectId } from "mongodb"
+import prisma from "@/database/prisma"
+import { saveBase64Image } from "@/lib/storage"
 
 // Get All (for Admin Management)
 export async function GET() {
     try {
-        const collection = await getCollection(COLLECTIONS.HERO_SLIDES)
-        const slides = await collection.find({}).sort({ page: 1, order: 1 }).toArray()
+        const slides = await prisma.heroSlide.findMany({
+            orderBy: [
+                { page: 'asc' },
+                { order: 'asc' }
+            ]
+        })
         return NextResponse.json({
             success: true,
-            data: slides.map(s => ({ ...s, _id: s._id.toString() }))
+            data: slides.map(s => ({ ...s, _id: s.id }))
         })
     } catch (error) {
+        console.error("Error fetching admin slides:", error)
         return NextResponse.json({ success: false, error: "Failed to fetch slides" }, { status: 500 })
     }
 }
@@ -22,46 +27,39 @@ export async function POST(req: Request) {
         const body = await req.json()
         const { id, title, subtitle, image, cta, link, order, isActive, page } = body
 
-        const collection = await getCollection(COLLECTIONS.HERO_SLIDES)
+        // Handle image saving
+        let imageUrl = image
+        if (image && image.startsWith("data:image")) {
+            imageUrl = await saveBase64Image(image, "slides")
+        }
+
+        const slideData: any = {
+            title,
+            subtitle,
+            image: imageUrl,
+            cta,
+            link,
+            page: page || "home",
+            order: parseInt(order) || 0,
+            isActive: isActive ?? true
+        }
 
         if (id) {
             // Update
-            const result = await collection.updateOne(
-                { _id: new ObjectId(id) },
-                {
-                    $set: {
-                        title,
-                        subtitle,
-                        image,
-                        cta,
-                        link,
-                        page: page || "home",
-                        order: parseInt(order) || 0,
-                        isActive: isActive ?? true,
-                        updatedAt: new Date()
-                    }
-                }
-            )
+            await prisma.heroSlide.update({
+                where: { id },
+                data: slideData
+            })
             return NextResponse.json({ success: true, message: "Cập nhật thành công" })
         } else {
             // Create
-            const newSlide = {
-                title,
-                subtitle,
-                image,
-                cta,
-                link,
-                page: page || "home",
-                order: parseInt(order) || 0,
-                isActive: true,
-                createdAt: new Date(),
-                updatedAt: new Date()
-            }
-            const result = await collection.insertOne(newSlide)
+            const newSlide = await prisma.heroSlide.create({
+                data: slideData
+            })
             return NextResponse.json({
                 success: true,
                 message: "Tạo mới thành công",
-                data: { ...newSlide, _id: result.insertedId.toString() }
+                data: { ...newSlide, _id: newSlide.id }
             })
         }
     } catch (error) {
@@ -78,8 +76,9 @@ export async function DELETE(req: Request) {
 
         if (!id) return NextResponse.json({ error: "Missing ID" }, { status: 400 })
 
-        const collection = await getCollection(COLLECTIONS.HERO_SLIDES)
-        await collection.deleteOne({ _id: new ObjectId(id) })
+        await prisma.heroSlide.delete({
+            where: { id }
+        })
 
         return NextResponse.json({ success: true, message: "Đã xóa slide" })
     } catch (error) {
@@ -87,3 +86,4 @@ export async function DELETE(req: Request) {
         return NextResponse.json({ success: false, error: "Failed to delete slide" }, { status: 500 })
     }
 }
+

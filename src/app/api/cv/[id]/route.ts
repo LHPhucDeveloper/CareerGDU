@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
-import { getCollection, COLLECTIONS } from "@/database/connection"
-import { ObjectId } from "mongodb"
+import prisma from "@/database/prisma"
+import fs from "fs"
+import path from "path"
 
 export async function GET(
     request: Request,
@@ -10,13 +11,10 @@ export async function GET(
         const { id: applicationId } = await params
         console.log(`[CV API] Serving CV for application: ${applicationId}`)
 
-        if (!ObjectId.isValid(applicationId)) {
-            console.warn(`[CV API] Invalid Application ID: ${applicationId}`)
-            return new Response("Invalid Application ID", { status: 400 })
-        }
-
-        const collection = await getCollection(COLLECTIONS.APPLICATIONS)
-        const application = await collection.findOne({ _id: new ObjectId(applicationId) })
+        const applicationRaw = await prisma.application.findUnique({
+            where: { id: applicationId }
+        })
+        const application = applicationRaw as any
 
         if (!application) {
             console.warn(`[CV API] Application not found: ${applicationId}`)
@@ -28,24 +26,30 @@ export async function GET(
             return new Response("CV file not found for this application", { status: 404 })
         }
 
-        // Parse data URI: data:[<mediatype>][;base64],<data>
-        // Example: "data:application/pdf;base64,JVBERi0xLjQK..."
-        const matches = application.cvBase64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/)
+        let buffer: Buffer
+        let contentType = application.cvType || "application/pdf"
 
-        if (!matches || matches.length !== 3) {
-            console.error(`[CV API] Invalid CV file format (regex failed) for application: ${applicationId}`)
-            return new Response("Invalid CV file format", { status: 500 })
+        if (application.cvBase64.startsWith("/uploads/")) {
+            // Case: Local filesystem storage
+            const filePath = path.join(process.cwd(), "public", application.cvBase64)
+            if (!fs.existsSync(filePath)) {
+                return new Response("File not found on server", { status: 404 })
+            }
+            buffer = fs.readFileSync(filePath)
+        } else {
+            // Backward compatibility for legacy Base64 data
+            const matches = application.cvBase64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/)
+            if (!matches || matches.length !== 3) {
+                return new Response("Invalid CV file format", { status: 500 })
+            }
+            contentType = matches[1]
+            buffer = Buffer.from(matches[2], 'base64')
         }
 
-        const contentType = matches[1]
-        const base64Data = matches[2]
-        const buffer = Buffer.from(base64Data, 'base64')
-
-        // Use 'inline' to try to open in browser (e.g. PDF), 'attachment' to force download
         const filename = application.cvOriginalName || 'cv.pdf'
         const encodedFilename = encodeURIComponent(filename)
 
-        return new Response(buffer, {
+        return new Response(new Uint8Array(buffer), {
             headers: {
                 "Content-Type": contentType,
                 "Content-Disposition": `inline; filename="${encodedFilename}"; filename*=UTF-8''${encodedFilename}`,
@@ -57,3 +61,5 @@ export async function GET(
         return new Response(`Internal Server Error: ${error.message || 'Unknown error'}`, { status: 500 })
     }
 }
+
+

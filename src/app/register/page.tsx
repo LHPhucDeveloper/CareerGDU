@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { useAuth } from "@/lib/auth-context"
 
 export default function RegisterPage() {
   const [formData, setFormData] = useState({
@@ -37,7 +36,80 @@ export default function RegisterPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [error, setError] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const [showAllMajors, setShowAllMajors] = useState(false)
+  const [customMajor, setCustomMajor] = useState("")
   const router = useRouter()
+
+  const FEATURED_GDU_MAJORS = [
+    "Công nghệ thông tin",
+    "Trí tuệ nhân tạo",
+    "Marketing",
+    "Tài chính ngân hàng",
+    "Kế toán",
+    "Ngôn ngữ Anh",
+  ]
+
+  const GDU_MAJOR_GROUPS = [
+    {
+      label: "Công nghệ thông tin",
+      items: [
+        "Công nghệ thông tin",
+        "Trí tuệ nhân tạo",
+        "Mạng máy tính và truyền thông dữ liệu",
+        "Kỹ thuật phần mềm",
+      ],
+    },
+    {
+      label: "Khoa học sức khỏe",
+      items: [
+        "Răng Hàm Mặt",
+        "Kỹ thuật phục hồi chức năng",
+        "Điều dưỡng",
+      ],
+    },
+    {
+      label: "Khoa học xã hội và Ngôn ngữ",
+      items: [
+        "Tâm lý học",
+        "Ngôn ngữ Trung Quốc",
+        "Ngôn ngữ Anh",
+        "Luật",
+        "Luật Kinh tế",
+        "Đông Phương học",
+      ],
+    },
+    {
+      label: "Quản trị Marketing",
+      items: [
+        "Quản trị khách sạn",
+        "Quản trị kinh doanh",
+        "Quản trị dịch vụ du lịch lữ hành",
+        "Marketing",
+      ],
+    },
+    {
+      label: "Tài chính thương mại",
+      items: [
+        "Thương mại điện tử",
+        "Tài chính ngân hàng",
+        "Logistics",
+        "Kinh doanh thương mại",
+        "Kinh doanh quốc tế",
+        "Kế toán",
+        "Công nghệ tài chính",
+      ],
+    },
+    {
+      label: "Truyền thông số",
+      items: [
+        "Truyền thông đa phương tiện",
+        "Quan hệ công chúng",
+        "Công nghệ truyền thông",
+      ],
+    },
+  ]
+
+  const OTHER_MAJOR_VALUE = "__other_major__"
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
@@ -60,6 +132,9 @@ export default function RegisterPage() {
       if (formData.phone && !/^0\d{9,10}$/.test(formData.phone)) return setError("Số điện thoại phải bắt đầu bằng số 0 và có 10-11 số")
       if (!formData.studentId.trim()) return setError("Vui lòng nhập MSSV")
       if (!formData.major) return setError("Vui lòng chọn ngành học")
+      if (formData.major === OTHER_MAJOR_VALUE && !customMajor.trim()) {
+        return setError("Vui lòng nhập ngành học")
+      }
     }
 
     // Employer Validation
@@ -90,7 +165,7 @@ export default function RegisterPage() {
           email: formData.email.trim(),
           phone: formData.phone.trim(),
           studentId: formData.studentId.trim(),
-          major: formData.major.trim(),
+          major: formData.major === OTHER_MAJOR_VALUE ? customMajor.trim() : formData.major.trim(),
           province: formData.province === "OTHER" ? formData.otherProvince.trim() : formData.province,
           // Employer trims
           contactPerson: formData.contactPerson.trim(),
@@ -251,27 +326,115 @@ export default function RegisterPage() {
                       />
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="major" className="text-gray-700 font-medium">Ngành học <span className="text-red-500">*</span></Label>
-                    <div className="relative group">
-                      <BookOpen className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 group-focus-within:text-red-500 transition-colors" />
-                      <Select
-                        value={formData.major}
-                        onValueChange={(value) => setFormData({ ...formData, major: value })}
-                      >
-                        <SelectTrigger className="w-full pl-11 pr-4 py-2.5 h-[46px] border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white transition-all text-gray-900 data-[placeholder]:text-gray-400">
-                          <SelectValue placeholder="Chọn ngành học" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Công nghệ thông tin">Công nghệ thông tin</SelectItem>
-                          <SelectItem value="Quản trị kinh doanh">Quản trị kinh doanh</SelectItem>
-                          <SelectItem value="Marketing">Marketing</SelectItem>
-                          <SelectItem value="Tài chính ngân hàng">Tài chính ngân hàng</SelectItem>
-                          <SelectItem value="Kế toán">Kế toán</SelectItem>
-                          <SelectItem value="Ngôn ngữ Anh">Ngôn ngữ Anh</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                  <div className="space-y-2 sm:col-span-1">
+                    <Label htmlFor="major" className="text-gray-700 font-medium">
+                      Ngành học <span className="text-red-500">*</span>
+                    </Label>
+
+                    {!showAllMajors ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setShowAllMajors(true)}
+                          className={`w-full relative text-left pl-11 pr-10 py-2.5 h-[46px] border rounded-xl bg-white transition-all ${formData.major
+                              ? "border-gray-200 text-gray-900"
+                              : "border-gray-200 text-gray-400"
+                            } focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500`}
+                        >
+                          <BookOpen className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 pointer-events-none" />
+                          <span className="block truncate">
+                            {formData.major === OTHER_MAJOR_VALUE
+                              ? "Ngành khác (tự nhập)"
+                              : formData.major || "Chọn ngành học"}
+                          </span>
+                          <ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+                        </button>
+
+                        {formData.major === OTHER_MAJOR_VALUE && (
+                          <div className="mt-2">
+                            <input
+                              id="customMajor"
+                              name="customMajor"
+                              type="text"
+                              value={customMajor}
+                              onChange={(e) => setCustomMajor(e.target.value)}
+                              placeholder="Nhập ngành học nếu chưa kịp cập nhật"
+                              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white transition-all placeholder:text-gray-400"
+                            />
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="border border-gray-200 rounded-xl bg-white overflow-hidden">
+                          <button
+                            type="button"
+                            onClick={() => setShowAllMajors(false)}
+                            className="w-full px-4 py-3 border-b border-gray-100 bg-gray-50 text-left flex items-center justify-between"
+                          >
+                            <span className="text-sm font-semibold text-gray-900">Chọn ngành học</span>
+                            <ChevronDown className="h-4 w-4 text-gray-400 rotate-180" />
+                          </button>
+
+                          <div className="max-h-72 overflow-y-auto px-4 py-3 space-y-4">
+                            {GDU_MAJOR_GROUPS.map((group) => (
+                              <div key={group.label}>
+                                <p className="text-sm font-bold text-gray-900 mb-2">{group.label}</p>
+                                <div className="space-y-1">
+                                  {group.items.map((major) => (
+                                    <button
+                                      key={major}
+                                      type="button"
+                                      onClick={() => {
+                                        if (formData.major !== major) {
+                                          setFormData((prev) => ({
+                                            ...prev,
+                                            major,
+                                          }))
+                                          setCustomMajor("")
+                                        }
+                                        setShowAllMajors(false)
+                                      }}
+                                      className={`block w-full text-left rounded-lg px-3 py-2 text-sm transition-colors ${formData.major === major
+                                          ? "bg-red-50 text-red-700 border border-red-200"
+                                          : "hover:bg-gray-50 border border-transparent text-gray-700"
+                                        }`}
+                                    >
+                                      {major}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+
+                            <div className="border-t border-gray-100 pt-3">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (formData.major !== OTHER_MAJOR_VALUE) {
+                                    setFormData((prev) => ({
+                                      ...prev,
+                                      major: OTHER_MAJOR_VALUE,
+                                    }))
+                                  }
+                                  setShowAllMajors(false)
+                                }}
+                                className={`block w-full text-left rounded-lg px-3 py-2 text-sm transition-colors ${formData.major === OTHER_MAJOR_VALUE
+                                    ? "bg-red-50 text-red-700 border border-red-200"
+                                    : "hover:bg-gray-50 border border-transparent text-gray-700"
+                                  }`}
+                              >
+                                Ngành khác (tự nhập)
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {formData.major && formData.major !== OTHER_MAJOR_VALUE && (
+                          <span className="text-xs text-gray-500">Đã chọn: {formData.major}</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

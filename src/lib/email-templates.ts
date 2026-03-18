@@ -4,7 +4,7 @@
  */
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://career.giadinh.edu.vn';
-const LOGO_URL = `${APP_URL}/gdu-logo.png`;
+//const LOGO_URL = `${APP_URL}/gdu-logo.png`;
 
 interface BaseTemplateProps {
     title: string;
@@ -36,7 +36,7 @@ const getBaseTemplate = ({
                     <!-- Header -->
                     <tr>
                         <td align="center" style="background-color: ${primaryColor}; padding: 30px 20px;">
-                            <img src="${LOGO_URL}" alt="GDU Logo" width="120" style="display: block; margin-bottom: 15px;">
+                            <img src="cid:gdu-logo" alt="GDU Logo" width="120" style="display:block; margin:0 auto 15px; max-width:120px; height:auto;">
                             <h1 style="color: #ffffff; margin: 0; font-size: 22px; letter-spacing: 1px; font-weight: 600;">GDU CAREER PORTAL</h1>
                         </td>
                     </tr>

@@ -1,16 +1,17 @@
 import { NextResponse } from "next/server"
-import { getCollection, COLLECTIONS } from "@/database/connection"
-import { ObjectId } from "mongodb"
+import prisma from "@/database/prisma"
 
 export async function GET() {
     try {
-        const collection = await getCollection(COLLECTIONS.SITE_CONFIGS)
-        const configs = await collection.find({}).toArray()
+        const configs = await prisma.siteConfig.findMany({
+            orderBy: { key: 'asc' }
+        })
         return NextResponse.json({
             success: true,
-            data: configs.map(c => ({ ...c, _id: c._id.toString() }))
+            data: configs.map(c => ({ ...c, _id: c.id }))
         })
     } catch (error) {
+        console.error("Error fetching admin configs:", error)
         return NextResponse.json({ success: false, error: "Failed to fetch configs" }, { status: 500 })
     }
 }
@@ -22,28 +23,30 @@ export async function POST(req: Request) {
 
         if (!key) return NextResponse.json({ success: false, error: "Missing key" }, { status: 400 })
 
-        const collection = await getCollection(COLLECTIONS.SITE_CONFIGS)
+        const tags = Array.isArray(hotTags) 
+            ? hotTags 
+            : (hotTags ? hotTags.split(",").map((t: string) => t.trim()).filter(Boolean) : [])
 
-        const updateData = {
+        const configData: any = {
             key,
             title,
             description,
-            hotTags: Array.isArray(hotTags) ? hotTags : hotTags.split(",").map((t: string) => t.trim()).filter(Boolean),
-            isActive: isActive ?? true,
-            updatedAt: new Date()
+            hotTags: tags,
+            isActive: isActive ?? true
         }
 
         if (id) {
-            await collection.updateOne(
-                { _id: new ObjectId(id) },
-                { $set: updateData }
-            )
+            await prisma.siteConfig.update({
+                where: { id },
+                data: configData
+            })
         } else {
-            await collection.updateOne(
-                { key },
-                { $set: { ...updateData, createdAt: new Date() } },
-                { upsert: true }
-            )
+            // Upsert by key if id is not provided
+            await prisma.siteConfig.upsert({
+                where: { key },
+                update: configData,
+                create: configData
+            })
         }
 
         return NextResponse.json({ success: true, message: "Lưu cấu hình thành công" })
@@ -52,3 +55,4 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: false, error: "Failed to save config" }, { status: 500 })
     }
 }
+

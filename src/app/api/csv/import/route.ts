@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import prisma from "@/database/prisma"
 
 export async function POST(req: Request) {
   try {
@@ -12,6 +13,10 @@ export async function POST(req: Request) {
 
     const text = await file.text()
     const lines = text.split("\n")
+    if (lines.length < 2) {
+        return NextResponse.json({ success: false, error: "Empty or invalid CSV file" }, { status: 400 })
+    }
+
     const headers = lines[0].split(",").map((h) => h.trim())
 
     const records = []
@@ -19,29 +24,66 @@ export async function POST(req: Request) {
       if (!lines[i].trim()) continue
 
       const values = lines[i].split(",")
-      const record: Record<string, string> = {}
+      const record: Record<string, any> = {}
 
       headers.forEach((header, index) => {
-        record[header] = values[index]?.trim() || ""
+        let val: any = values[index]?.trim() || ""
+        // Basic type conversion
+        if (header === "rating" || header === "likes" || header === "views" || header === "applicants" || header === "quantity") {
+            val = parseInt(val) || 0
+        }
+        if (header === "isActive" || header === "verified") {
+            val = val === "true" || val === "1"
+        }
+        record[header] = val
       })
 
       records.push(record)
     }
 
-    // In production with MongoDB:
-    // const collection = await getCollection(type)
-    // await collection.insertMany(records)
+    let resultCount = 0
+    if (type === "jobs") {
+        const { count } = await prisma.job.createMany({
+            data: records.map(({ id, _id, ...r }) => ({ 
+                ...r,
+                postedAt: r.postedAt ? new Date(r.postedAt) : new Date()
+            })) as any,
+            skipDuplicates: true
+        })
+        resultCount = count
+    } else if (type === "reviews") {
+        const { count } = await prisma.userReview.createMany({
+            data: records.map(({ id, _id, ...r }) => ({
+                ...r,
+                createdAt: r.createdAt ? new Date(r.createdAt) : new Date()
+            })) as any,
+            skipDuplicates: true
+        })
+        resultCount = count
+    } else if (type === "users") {
+        const { count } = await prisma.user.createMany({
+            data: records.map(({ id, _id, ...r }) => ({
+                ...r,
+                createdAt: r.createdAt ? new Date(r.createdAt) : new Date()
+            })) as any,
+            skipDuplicates: true
+        })
+        resultCount = count
+    }
+
 
     return NextResponse.json({
       success: true,
-      message: `Imported ${records.length} records successfully`,
+      message: `Imported ${resultCount} records successfully`,
       data: {
         type,
-        count: records.length,
+        count: resultCount,
         sample: records.slice(0, 3),
       },
     })
   } catch (error) {
+    console.error("Import error:", error)
     return NextResponse.json({ success: false, error: "Failed to import CSV" }, { status: 500 })
   }
 }
+

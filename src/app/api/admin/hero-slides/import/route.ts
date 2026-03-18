@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getCollection, COLLECTIONS } from "@/database/connection"
+import prisma from "@/database/prisma"
 
 const defaultSlides = [
     {
@@ -11,8 +11,6 @@ const defaultSlides = [
         page: "home",
         order: 0,
         isActive: true,
-        createdAt: new Date(),
-        updatedAt: new Date()
     },
     {
         title: "Thực tập sinh - Bước đệm sự nghiệp",
@@ -23,8 +21,6 @@ const defaultSlides = [
         page: "home",
         order: 1,
         isActive: true,
-        createdAt: new Date(),
-        updatedAt: new Date()
     },
     {
         title: "Hội chợ việc làm GDU 2025",
@@ -35,25 +31,24 @@ const defaultSlides = [
         page: "home",
         order: 2,
         isActive: true,
-        createdAt: new Date(),
-        updatedAt: new Date()
     },
 ]
 
 export async function POST() {
     try {
-        const collection = await getCollection(COLLECTIONS.HERO_SLIDES)
-
         // Check if any slides already exist to avoid accidental duplicates 
-        // though the user might want this to reset, let's just insert them
-        const result = await collection.insertMany(defaultSlides)
+        const { count } = await prisma.heroSlide.createMany({
+            data: defaultSlides as any,
+            skipDuplicates: true
+        })
 
         return NextResponse.json({
             success: true,
-            message: `Đã nhập ${result.insertedCount} slide mặc định thành công`,
+            message: `Đã nhập ${count} slide mặc định thành công`,
         })
     } catch (error) {
         console.error("Error importing default slides:", error)
         return NextResponse.json({ success: false, error: "Lỗi nhập dữ liệu mặc định" }, { status: 500 })
     }
 }
+

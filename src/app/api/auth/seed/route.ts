@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getCollection, COLLECTIONS } from "@/database/connection"
+import prisma from "@/database/prisma"
 import bcrypt from "bcryptjs"
 
 // Demo users to seed
@@ -10,7 +10,7 @@ const demoUsers = [
         name: "Admin GDU",
         role: "admin",
         phone: "0909123456",
-        avatar: "", // Empty to show initials
+        avatar: "",
     },
     {
         email: "student@gdu.edu.vn",
@@ -20,7 +20,7 @@ const demoUsers = [
         phone: "0909234567",
         studentId: "GDU2024001",
         major: "Công nghệ thông tin",
-        avatar: "", // Empty to show initials
+        avatar: "",
     },
     {
         email: "employer@company.com",
@@ -28,48 +28,43 @@ const demoUsers = [
         name: "Tran Thi B",
         role: "employer",
         phone: "0909345678",
-        avatar: "", // Empty to show initials
+        avatar: "",
     },
 ]
 
 export async function GET() {
     try {
-        const collection = await getCollection(COLLECTIONS.USERS)
         const results = []
 
         for (const user of demoUsers) {
-            // Check if user already exists
-            const existing = await collection.findOne({ email: user.email })
+            const hashedPassword = await bcrypt.hash(user.password, 10)
+            const existing = await prisma.user.findUnique({
+                where: { email: user.email }
+            })
 
             if (existing) {
-                // Update with new hashed password
-                const hashedPassword = await bcrypt.hash(user.password, 10)
-                await collection.updateOne(
-                    { email: user.email },
-                    {
-                        $set: {
-                            password: hashedPassword,
-                            name: user.name,
-                            role: user.role,
-                            phone: user.phone,
-                            avatar: user.avatar,
-                            ...(user.role === "student" && {
-                                studentId: user.studentId,
-                                major: user.major,
-                            }),
-                            updatedAt: new Date(),
-                        }
+                await prisma.user.update({
+                    where: { email: user.email },
+                    data: {
+                        password: hashedPassword,
+                        name: user.name,
+                        role: user.role,
+                        phone: user.phone,
+                        avatar: user.avatar,
+                        ...(user.role === "student" && {
+                            studentId: user.studentId,
+                            major: user.major,
+                        }),
                     }
-                )
+                })
                 results.push({ email: user.email, status: "updated" })
             } else {
-                // Create new user
-                const hashedPassword = await bcrypt.hash(user.password, 10)
                 const { password, ...userWithoutPassword } = user
-                await collection.insertOne({
-                    ...userWithoutPassword,
-                    password: hashedPassword,
-                    createdAt: new Date(),
+                await prisma.user.create({
+                    data: {
+                        ...userWithoutPassword,
+                        password: hashedPassword,
+                    } as any
                 })
                 results.push({ email: user.email, status: "created" })
             }
@@ -85,3 +80,4 @@ export async function GET() {
         return NextResponse.json({ error: "Failed to seed demo users" }, { status: 500 })
     }
 }
+

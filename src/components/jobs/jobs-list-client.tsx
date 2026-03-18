@@ -143,6 +143,8 @@ export function JobsListClient({ dbJobs = [] }: JobsListClientProps) {
   const { toast } = useToast()
   const { user } = useAuth()
 
+  // Controls the collapsed/expanded state of the top filter bar
+  const [isTopFilterCollapsed, setIsTopFilterCollapsed] = useState(false)
   const [searchQuery, setSearchQuery] = useState(searchParams.get("search") || searchParams.get("jobTitle") || "")
   const [selectedType, setSelectedType] = useState<string | null>(searchParams.get("type") || null)
   const [selectedCompany, setSelectedCompany] = useState<string | null>(null)
@@ -202,6 +204,17 @@ export function JobsListClient({ dbJobs = [] }: JobsListClientProps) {
       setSavedJobs([])
     }
   }, [user?.id])
+
+  // Load saved filter bar state from localStorage on component mount
+  useEffect(() => {
+    const saved = localStorage.getItem("jobs_top_filter_collapsed")
+    if (saved) setIsTopFilterCollapsed(saved === "1")
+  }, [])
+
+  // Persist filter bar state to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem("jobs_top_filter_collapsed", isTopFilterCollapsed ? "1" : "0")
+  }, [isTopFilterCollapsed])
 
   const loadSavedJobs = async () => {
     if (!user?.id) return
@@ -985,101 +998,139 @@ export function JobsListClient({ dbJobs = [] }: JobsListClientProps) {
         <div className="container mx-auto px-4">
           <div className="flex flex-col gap-3">
             {/* Row 1: Filter Options */}
-            <div className="flex flex-nowrap lg:flex-wrap items-center gap-2 overflow-x-auto lg:overflow-visible pb-3 lg:pb-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-              <FilterDropdown
-                label="Ngành nghề"
-                options={industryOptions}
-                value={selectedIndustry}
-                onChange={setSelectedIndustry}
-                icon={Briefcase}
-                dropdownId="industry"
-              />
-              <FilterDropdown
-                label="Kinh nghiệm"
-                options={experienceOptions}
-                value={selectedExperience}
-                onChange={setSelectedExperience}
-                icon={Clock}
-                dropdownId="experience"
-              />
-              <FilterDropdown
-                label="Mức lương"
-                options={advancedSalaryRanges}
-                value={selectedSalary}
-                onChange={setSelectedSalary}
-                icon={DollarSign}
-                dropdownId="salary"
-              />
-              <FilterDropdown
-                label="Học vấn"
-                options={educationOptions}
-                value={selectedEducation}
-                onChange={setSelectedEducation}
-                icon={GraduationCap}
-                dropdownId="education"
-              />
-              <FilterDropdown
-                label="Loại việc"
-                options={Object.entries(typeLabels).map(([id, label]) => ({ id, label }))}
-                value={selectedType}
-                onChange={setSelectedType}
-                icon={Building}
-                dropdownId="type"
-              />
-              <FilterDropdown
-                label="Đăng trong"
-                options={postedDateOptions}
-                value={selectedPostedDate}
-                onChange={setSelectedPostedDate}
-                icon={Calendar}
-                dropdownId="posted"
-              />
-              <FilterDropdown
-                label="Địa điểm"
-                options={locationOptions}
-                value={selectedLocation}
-                onChange={setSelectedLocation}
-                icon={MapPin}
-                dropdownId="location"
-                searchable={true}
-              />
+            {!isTopFilterCollapsed && (
+              <div className="flex flex-nowrap lg:flex-wrap items-center gap-2 overflow-x-auto lg:overflow-visible pb-3 lg:pb-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                <FilterDropdown
+                  label="Ngành nghề"
+                  options={industryOptions}
+                  value={selectedIndustry}
+                  onChange={setSelectedIndustry}
+                  icon={Briefcase}
+                  dropdownId="industry"
+                />
+                <FilterDropdown
+                  label="Kinh nghiệm"
+                  options={experienceOptions}
+                  value={selectedExperience}
+                  onChange={setSelectedExperience}
+                  icon={Clock}
+                  dropdownId="experience"
+                />
+                <FilterDropdown
+                  label="Mức lương"
+                  options={advancedSalaryRanges}
+                  value={selectedSalary}
+                  onChange={setSelectedSalary}
+                  icon={DollarSign}
+                  dropdownId="salary"
+                />
+                <FilterDropdown
+                  label="Học vấn"
+                  options={educationOptions}
+                  value={selectedEducation}
+                  onChange={setSelectedEducation}
+                  icon={GraduationCap}
+                  dropdownId="education"
+                />
+                <FilterDropdown
+                  label="Loại việc"
+                  options={Object.entries(typeLabels).map(([id, label]) => ({ id, label }))}
+                  value={selectedType}
+                  onChange={setSelectedType}
+                  icon={Building}
+                  dropdownId="type"
+                />
+                <FilterDropdown
+                  label="Đăng trong"
+                  options={postedDateOptions}
+                  value={selectedPostedDate}
+                  onChange={setSelectedPostedDate}
+                  icon={Calendar}
+                  dropdownId="posted"
+                />
+                <FilterDropdown
+                  label="Địa điểm"
+                  options={locationOptions}
+                  value={selectedLocation}
+                  onChange={setSelectedLocation}
+                  icon={MapPin}
+                  dropdownId="location"
+                  searchable={true}
+                />
 
-              {(hasAdvancedFilters || selectedSalary || selectedType) && (
-                <button
-                  onClick={() => {
-                    clearAdvancedFilters()
-                    setSelectedSalary(null)
-                    setSelectedType(null)
-                  }}
-                  className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-sm font-bold text-red-600 bg-red-50 hover:bg-red-100 rounded-full transition-all border border-red-100"
-                >
-                  <X className="h-3.5 w-3.5" />
-                  <span>Xóa lọc</span>
-                </button>
-              )}
-            </div>
+                {(hasAdvancedFilters || selectedSalary || selectedType) && (
+                  <button
+                    onClick={() => {
+                      clearAdvancedFilters()
+                      setSelectedSalary(null)
+                      setSelectedType(null)
+                    }}
+                    className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-sm font-bold text-red-600 bg-red-50 hover:bg-red-100 rounded-full transition-all border border-red-100"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                    <span>Xóa lọc</span>
+                  </button>
+                )}
+              </div>
+            )}
 
-            {/* Row 2: Search Bar - Left Aligned */}
-            <div className="w-full lg:w-[600px]">
-              <div className="relative group">
+            {/* Row 2: Search + Collapse button */}
+            <div className="w-full lg:w-[680px] flex items-center gap-2">
+              {/* Search input */}
+              <div className="relative group flex-1">
                 <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 group-focus-within:text-primary transition-colors font-bold" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Tìm kiếm nhanh tên công việc, công ty..."
-                  className="w-full pl-12 pr-4 py-2 text-sm lg:text-base bg-gray-50/50 border border-gray-100 rounded-2xl focus:outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary/30 focus:bg-white transition-all font-medium placeholder:text-gray-400 shadow-sm hover:shadow-md"
+                  className="w-full pl-12 pr-10 py-2 text-sm lg:text-base bg-gray-50/50 border border-gray-100 rounded-2xl
+                 focus:outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary/30 focus:bg-white
+                 transition-all font-medium placeholder:text-gray-400 shadow-sm hover:shadow-md"
                 />
+
                 {searchQuery && (
                   <button
                     onClick={() => setSearchQuery("")}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-gray-100 text-gray-400 transition-colors"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-gray-100 text-gray-400 transition-colors"
+                    aria-label="Xóa tìm kiếm"
                   >
                     <X className="h-4 w-4" />
                   </button>
                 )}
               </div>
+
+              {/* Collapse toggle */}
+              <button
+                onClick={() => setIsTopFilterCollapsed(v => !v)}
+                className="h-10 px-3 rounded-2xl border border-gray-200 bg-white hover:bg-gray-50 shadow-sm
+               text-gray-700 font-bold text-sm flex items-center gap-2 transition-all"
+                aria-label={isTopFilterCollapsed ? "Mở bộ lọc" : "Thu gọn bộ lọc"}
+                title={isTopFilterCollapsed ? "Mở bộ lọc" : "Thu gọn bộ lọc"}
+              >
+                <Filter className="h-4 w-4" />
+                <span className="hidden sm:inline">
+                  {isTopFilterCollapsed ? "Mở lọc" : "Thu gọn"}
+                </span>
+              </button>
             </div>
+            {isTopFilterCollapsed && (hasAdvancedFilters || selectedSalary || selectedType) && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-gray-600 bg-gray-100 px-2 py-1 rounded-full">
+                  Đang lọc: {advancedFilterCount + (selectedSalary ? 1 : 0) + (selectedType ? 1 : 0)}
+                </span>
+                <button
+                  onClick={() => {
+                    clearAdvancedFilters()
+                    setSelectedSalary(null)
+                    setSelectedType(null)
+                  }}
+                  className="text-xs font-bold text-red-600 hover:text-red-700"
+                >
+                  Xóa lọc
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
