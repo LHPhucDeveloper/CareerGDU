@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation"
 import { Header } from "@/components/layout/header"
+import prisma from "@/database/prisma"
+
 import { Footer } from "@/components/layout/footer"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
@@ -42,32 +44,28 @@ export default async function JobPage(props: JobPageProps) {
     const params = await props.params;
     let job: any = null
 
-    // 1. Try to fetch from DB first (Most up-to-date)
+    // 1. Fetch from DB using Prisma
     let hiredCount = 0
     try {
-        const { getCollection, COLLECTIONS } = await import("@/database/connection")
-        const { ObjectId } = await import("mongodb")
-        const jobsCollection = await getCollection(COLLECTIONS.JOBS)
-        const appsCollection = await getCollection(COLLECTIONS.APPLICATIONS)
+        const dbJob = await prisma.job.findUnique({
+            where: { id: params.id }
+        })
+        
+        if (dbJob) {
+            job = { ...dbJob, _id: dbJob.id }
 
-        if (ObjectId.isValid(params.id)) {
-            const dbJob = await jobsCollection.findOne({ _id: new ObjectId(params.id) })
-            if (dbJob) {
-                job = { ...dbJob, _id: dbJob._id.toString() }
-
-                // Fetch hired count - robust check for both string and ObjectId
-                hiredCount = await appsCollection.countDocuments({
-                    $or: [
-                        { jobId: params.id },
-                        { jobId: new ObjectId(params.id) }
-                    ],
+            // Fetch hired count
+            hiredCount = await prisma.application.count({
+                where: {
+                    jobId: params.id,
                     status: "hired"
-                })
-            }
+                }
+            })
         }
     } catch (error) {
-        console.error("Error fetching job or hired count from DB:", error)
+        console.error("Error fetching job or hired count from Prisma:", error)
     }
+
 
     // 2. Fallback: Removed (everything is in DB now)
 

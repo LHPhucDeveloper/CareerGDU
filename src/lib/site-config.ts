@@ -1,13 +1,11 @@
-import { getCollection, COLLECTIONS } from "../database/connection"
+import prisma from "@/database/prisma"
 
 export async function getSiteConfig(key: string) {
     try {
-        const collection = await getCollection(COLLECTIONS.SITE_CONFIGS)
-        const config = await collection.findOne({ key, isActive: true })
-        if (config) {
-            return JSON.parse(JSON.stringify({ ...config, _id: config._id.toString() }))
-        }
-        return null
+        const config = await prisma.siteConfig.findFirst({
+            where: { key, isActive: true }
+        })
+        return config
     } catch (error) {
         console.error(`Error getting site config for ${key}:`, error)
         return null
@@ -16,11 +14,13 @@ export async function getSiteConfig(key: string) {
 
 export async function getAllSiteConfigs() {
     try {
-        const collection = await getCollection(COLLECTIONS.SITE_CONFIGS)
-        const configs = await collection.find({ isActive: true }).toArray()
-        return JSON.parse(JSON.stringify(configs.map(c => ({ ...c, _id: c._id.toString() }))))
+        const configs = await prisma.siteConfig.findMany({
+            where: { isActive: true }
+        })
+        return configs
     } catch (error) {
         console.error("Error getting all site configs:", error)
         return []
     }
 }
+

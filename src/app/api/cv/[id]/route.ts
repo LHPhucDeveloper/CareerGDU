@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server"
-import { getCollection, COLLECTIONS } from "@/database/connection"
-import { ObjectId } from "mongodb"
+import prisma from "@/database/prisma"
 import fs from "fs"
 import path from "path"
 
@@ -12,13 +11,10 @@ export async function GET(
         const { id: applicationId } = await params
         console.log(`[CV API] Serving CV for application: ${applicationId}`)
 
-        if (!ObjectId.isValid(applicationId)) {
-            console.warn(`[CV API] Invalid Application ID: ${applicationId}`)
-            return new Response("Invalid Application ID", { status: 400 })
-        }
-
-        const collection = await getCollection(COLLECTIONS.APPLICATIONS)
-        const application = await collection.findOne({ _id: new ObjectId(applicationId) })
+        const applicationRaw = await prisma.application.findUnique({
+            where: { id: applicationId }
+        })
+        const application = applicationRaw as any
 
         if (!application) {
             console.warn(`[CV API] Application not found: ${applicationId}`)
@@ -34,14 +30,14 @@ export async function GET(
         let contentType = application.cvType || "application/pdf"
 
         if (application.cvBase64.startsWith("/uploads/")) {
-            // Trường hợp lưu bằng file cục bộ
+            // Case: Local filesystem storage
             const filePath = path.join(process.cwd(), "public", application.cvBase64)
             if (!fs.existsSync(filePath)) {
                 return new Response("File not found on server", { status: 404 })
             }
             buffer = fs.readFileSync(filePath)
         } else {
-            // Tương thích ngược với dữ liệu Base64 cũ
+            // Backward compatibility for legacy Base64 data
             const matches = application.cvBase64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/)
             if (!matches || matches.length !== 3) {
                 return new Response("Invalid CV file format", { status: 500 })
@@ -65,3 +61,5 @@ export async function GET(
         return new Response(`Internal Server Error: ${error.message || 'Unknown error'}`, { status: 500 })
     }
 }
+
+

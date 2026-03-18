@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server"
-import { getCollection, COLLECTIONS } from "@/database/connection"
-import { ObjectId } from "mongodb"
-import { sendEmail } from "@/services/email.service"
+import prisma from "@/database/prisma"
 
 export async function PATCH(
     req: Request,
@@ -26,43 +24,34 @@ export async function PATCH(
             )
         }
 
-        const collection = await getCollection(COLLECTIONS.JOBS)
-
-        // Find the job to get creator info (for email)
-        const job = await collection.findOne({ _id: new ObjectId(id) })
+        // Find the job to get creator info
+        const job = await prisma.job.findUnique({
+            where: { id }
+        })
 
         if (!job) {
             return NextResponse.json({ error: "Job not found" }, { status: 404 })
         }
 
-        const now = new Date().toISOString()
-        const updateFields: any = {
+        const data: any = {
             status: status,
             adminFeedback: feedback || "",
-            updatedAt: now
+            updatedAt: new Date()
         }
 
         // If job is being activated, refresh the postedAt date
         if (status === 'active') {
-            updateFields.postedAt = now
+            data.postedAt = new Date()
         }
 
-        const result = await collection.updateOne(
-            { _id: new ObjectId(id) },
-            { $set: updateFields }
-        )
-
-        if (result.matchedCount === 0) {
-            return NextResponse.json(
-                { error: "Job not found" },
-                { status: 404 }
-            )
-        }
+        const updatedJob = await prisma.job.update({
+            where: { id },
+            data
+        })
 
         // Notification Logic: Notify Employer
         if (job.creatorId && status && status !== job.status) {
             try {
-                const notifCollection = await getCollection(COLLECTIONS.NOTIFICATIONS)
                 let message = ""
                 let title = ""
 
@@ -71,7 +60,6 @@ export async function PATCH(
                     message = `Tin tuyển dụng "${job.title}" của bạn đã được phê duyệt và hiển thị công khai.`
                 } else if (status === 'rejected' || status === 'request_changes') {
                     title = "Tin tuyển dụng cần chỉnh sửa"
-                    // Try to get reason from multiple potential fields
                     const reason = feedback || body.adminFeedback || body.reason || ""
 
                     if (reason) {
@@ -82,14 +70,15 @@ export async function PATCH(
                 }
 
                 if (title) {
-                    await notifCollection.insertOne({
-                        userId: job.creatorId,
-                        type: 'system',
-                        title: title,
-                        message: message,
-                        read: false,
-                        createdAt: new Date(),
-                        link: `/dashboard/my-jobs`,
+                    await prisma.notification.create({
+                        data: {
+                            userId: job.creatorId,
+                            type: 'system',
+                            title: title,
+                            message: message,
+                            read: false,
+                            link: `/dashboard/my-jobs`,
+                        }
                     })
                 }
             } catch (err) {
@@ -109,3 +98,4 @@ export async function PATCH(
         )
     }
 }
+

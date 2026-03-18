@@ -1,69 +1,52 @@
 import { NextResponse } from "next/server"
+import prisma from "@/database/prisma"
 
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url)
     const type = searchParams.get("type") || "reviews"
 
-    // Mock data - in production, fetch from MongoDB
     let data: Record<string, any>[] = []
     let headers: string[] = []
 
     if (type === "reviews") {
-      headers = ["id", "author", "rating", "content", "date", "likes", "source"]
-      data = [
-        {
-          id: "1",
-          author: "Nguyen Van A",
-          rating: 5,
-          content: "Truong rat tot",
-          date: "2025-12-10",
-          likes: 24,
-          source: "Google Maps",
-        },
-        {
-          id: "2",
-          author: "Tran Thi B",
-          rating: 4,
-          content: "Giang vien nhiet tinh",
-          date: "2025-12-08",
-          likes: 18,
-          source: "Google Maps",
-        },
-      ]
+      headers = ["id", "author", "rating", "content", "createdAt", "likes", "status"]
+      const reviews = await prisma.userReview.findMany({
+          orderBy: { createdAt: 'desc' },
+          include: { user: true }
+      })
+      data = reviews.map(r => ({
+          ...r,
+          author: r.user.name,
+          createdAt: r.createdAt.toISOString().split('T')[0]
+      }))
     } else if (type === "jobs") {
       headers = ["id", "title", "company", "location", "type", "salary", "deadline", "status", "applicants"]
-      data = [
-        {
-          id: "1",
-          title: "Frontend Developer",
-          company: "FPT",
-          location: "HCM",
-          type: "internship",
-          salary: "5-8M",
-          deadline: "2025-12-30",
-          status: "active",
-          applicants: 45,
-        },
-      ]
+      const jobs = await prisma.job.findMany({
+          orderBy: { postedAt: 'desc' }
+      })
+      data = jobs.map(j => ({
+          ...j,
+          deadline: j.deadline || "N/A"
+      }))
     } else if (type === "users") {
       headers = ["id", "name", "email", "role", "status", "createdAt"]
-      data = [
-        {
-          id: "1",
-          name: "Nguyen Van A",
-          email: "a@gdu.edu.vn",
-          role: "student",
-          status: "active",
-          createdAt: "2025-12-01",
-        },
-      ]
+      const users = await prisma.user.findMany({
+          orderBy: { createdAt: 'desc' }
+      })
+      data = users.map(u => ({
+          ...u,
+          createdAt: u.createdAt.toISOString().split('T')[0]
+      }))
     }
 
     // Generate CSV content
     const csvLines = [headers.join(",")]
     data.forEach((row) => {
-      const values = headers.map((h) => String(row[h] || "").replace(/,/g, ";"))
+      const values = headers.map((h) => {
+          const val = row[h];
+          return String(val === null || val === undefined ? "" : val).replace(/,/g, ";").replace(/\n/g, " ")
+      })
       csvLines.push(values.join(","))
     })
 
@@ -71,11 +54,13 @@ export async function GET(req: Request) {
 
     return new NextResponse(csvContent, {
       headers: {
-        "Content-Type": "text/csv",
+        "Content-Type": "text/csv; charset=utf-8",
         "Content-Disposition": `attachment; filename=${type}_export_${Date.now()}.csv`,
       },
     })
   } catch (error) {
+    console.error("Export error:", error)
     return NextResponse.json({ success: false, error: "Failed to export CSV" }, { status: 500 })
   }
 }
+

@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server"
-import { getCollection, COLLECTIONS } from "@/database/connection"
-import { ObjectId } from "mongodb"
+import prisma from "@/database/prisma"
 
 export async function GET(
     request: Request,
@@ -9,16 +8,9 @@ export async function GET(
     try {
         const { id } = await params
 
-        const collection = await getCollection(COLLECTIONS.COMPANIES)
-
-        let company;
-        // Check if ID is a valid MongoDB ObjectId
-        if (ObjectId.isValid(id)) {
-            company = await collection.findOne({ _id: new ObjectId(id) })
-        } else {
-            // Fallback for string IDs if any exist (though we're moving to MongoDB)
-            company = await collection.findOne({ id: id })
-        }
+        const company = await prisma.company.findUnique({
+            where: { id }
+        })
 
         if (!company) {
             return NextResponse.json(
@@ -31,8 +23,8 @@ export async function GET(
             success: true,
             company: {
                 ...company,
-                _id: company._id.toString(),
-                id: company._id.toString()
+                _id: company.id,
+                id: company.id
             },
         })
     } catch (error) {
@@ -43,3 +35,4 @@ export async function GET(
         )
     }
 }
+

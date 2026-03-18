@@ -1,5 +1,4 @@
-import { getCollection, COLLECTIONS } from "../database/connection"
-import { ObjectId } from "mongodb"
+import prisma from "@/database/prisma"
 
 export type NotificationType = 'email' | 'push' | 'newJobs'
 
@@ -8,15 +7,15 @@ export type NotificationType = 'email' | 'push' | 'newJobs'
  * Defaults to true for email and newJobs, false for push if not set.
  */
 export async function checkNotificationPreference(
-    userId: string | ObjectId | null | undefined,
+    userId: string | null | undefined,
     type: NotificationType
 ): Promise<boolean> {
     if (!userId) return true // Default to true if no user associated (e.g. system alerts)
 
     try {
-        const usersCollection = await getCollection(COLLECTIONS.USERS)
-        const user = await usersCollection.findOne({
-            _id: typeof userId === 'string' ? new ObjectId(userId) : userId
+        const user = await (prisma.user as any).findUnique({
+            where: { id: userId },
+            select: { notificationSettings: true }
         })
 
         if (!user || !user.notificationSettings) {
@@ -25,9 +24,12 @@ export async function checkNotificationPreference(
             return true
         }
 
-        return user.notificationSettings[type] ?? (type === 'push' ? false : true)
+        const settings = user.notificationSettings as any
+        return settings[type] ?? (type === 'push' ? false : true)
+
     } catch (error) {
         console.error(`Error checking notification preference for ${userId}:`, error)
         return true // Default to sending if check fails to ensure critical info isn't lost
     }
 }
+

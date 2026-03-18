@@ -3,123 +3,45 @@ import Link from "next/link"
 import { Header } from "@/components/layout/header"
 import { Footer } from "@/components/layout/footer"
 import { JobsListClient } from "@/components/jobs/jobs-list-client"
-import { getCollection, COLLECTIONS } from "@/database/connection"
-
-export const dynamic = "force-dynamic"
+import prisma from "@/database/prisma"
 import { Job } from "@/lib/jobs-data"
 
 async function getActiveJobsFromDB(): Promise<Job[]> {
   try {
-    const now = new Date()
-    const startOfToday = new Date(now.toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }) + 'T00:00:00+07:00')
+    const jobs = await prisma.job.findMany({
+      where: {
+        status: "active",
+      },
+      include: {
+        applications: {
+          where: { status: "hired" }
+        }
+      },
+      orderBy: { postedAt: 'desc' }
+    })
 
-    const collection = await getCollection(COLLECTIONS.JOBS)
+    // Filter by quantity/hiredCount and deadline in memory
+    const filteredJobs = jobs.filter(job => {
+      const hiredCount = job.applications.length
+      const isAvailable = job.quantity === -1 || hiredCount < (job.quantity || 1)
+      
+      // Basic deadline check
+      const isDeadlineValid = !job.deadline || 
+                             job.deadline === "Vô thời hạn" || 
+                             job.deadline === "" ||
+                             new Date() <= new Date(job.deadline)
 
-    // Filter by active status AND deadline >= today
-    // Using aggregation to get hiredCount
-    const jobs = await collection.aggregate([
-      {
-        $addFields: {
-          normalizedDeadline: {
-            $cond: {
-              if: { $eq: [{ $type: "$deadline" }, "date"] },
-              then: "$deadline",
-              else: {
-                $cond: {
-                  if: { $regexMatch: { input: { $ifNull: ["$deadline", ""] }, regex: /^\s*\d{2}\/\d{2}\/\d{4}\s*$/ } },
-                  then: {
-                    $dateFromString: {
-                      dateString: { $trim: { input: "$deadline" } },
-                      format: "%d/%m/%Y",
-                      timezone: "Asia/Ho_Chi_Minh"
-                    }
-                  },
-                  else: {
-                    $cond: {
-                      if: { $regexMatch: { input: { $ifNull: ["$deadline", ""] }, regex: /^\s*\d{4}-\d{2}-\d{2}\s*$/ } },
-                      then: {
-                        $dateFromString: {
-                          dateString: { $trim: { input: "$deadline" } },
-                          format: "%Y-%m-%d",
-                          timezone: "Asia/Ho_Chi_Minh"
-                        }
-                      },
-                      else: null
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      {
-        $match: {
-          status: "active",
-          $or: [
-            { normalizedDeadline: { $gte: startOfToday } },
-            { deadline: { $in: [null, "", "Vô thời hạn"] } },
-            { normalizedDeadline: { $exists: false } }
-          ]
-        }
-      },
-      {
-        $lookup: {
-          from: COLLECTIONS.APPLICATIONS,
-          let: { jobIdStr: { $toString: "$_id" }, jobIdObj: "$_id" },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    {
-                      $or: [
-                        { $eq: ["$jobId", "$$jobIdStr"] },
-                        { $eq: ["$jobId", "$$jobIdObj"] }
-                      ]
-                    },
-                    { $eq: ["$status", "hired"] }
-                  ]
-                }
-              }
-            }
-          ],
-          as: "hiredApplications"
-        }
-      },
-      {
-        $addFields: {
-          hiredCount: { $size: "$hiredApplications" }
-        }
-      },
-      {
-        $match: {
-          $expr: {
-            $or: [
-              { $eq: ["$quantity", -1] }, // Limitless
-              { $lt: ["$hiredCount", { $ifNull: ["$quantity", 1] }] } // Still has slots
-            ]
-          }
-        }
-      },
-      {
-        $project: {
-          hiredApplications: 0
-        }
-      },
-      {
-        $sort: { postedAt: -1 }
-      }
-    ]).toArray()
+      return isAvailable && isDeadlineValid
+    })
 
-    return jobs.map(job => ({
+    return filteredJobs.map(job => ({
       ...job,
-      _id: job._id.toString(),
-      skills: job.skills || [],
-      hiredCount: job.hiredCount || 0
+      _id: job.id,
+      skills: (job.requirements as any)?.skills || [],
+      hiredCount: job.applications.length
     })) as any[]
   } catch (error) {
-    console.error("Error fetching jobs from MongoDB:", error)
+    console.error("Error fetching jobs from Prisma:", error)
     return []
   }
 }
@@ -129,21 +51,23 @@ export const revalidate = 60
 
 async function getBannerData(): Promise<any> {
   try {
-    const collection = await getCollection(COLLECTIONS.HERO_SLIDES)
-    const slide = await collection.findOne({ page: "jobs", isActive: true })
+    const slide = await prisma.heroSlide.findFirst({
+        where: { page: "jobs", isActive: true }
+    })
 
     if (slide) {
       return {
         ...slide,
-        _id: slide._id.toString()
+        _id: slide.id
       }
     }
     return null
   } catch (error) {
-    console.error("Error fetching jobs banner:", error)
+    console.error("Error fetching jobs banner from Prisma:", error)
     return null
   }
 }
+
 
 export default async function JobsPage() {
   const [dbJobs, banner] = await Promise.all([

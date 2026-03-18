@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getCollection, COLLECTIONS } from "@/database/connection"
+import prisma from "@/database/prisma"
 import bcrypt from "bcryptjs"
 
 export async function POST(req: Request) {
@@ -14,13 +14,17 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Mật khẩu phải có ít nhất 6 ký tự" }, { status: 400 })
         }
 
-        const collection = await getCollection(COLLECTIONS.USERS)
+        const normalizedEmail = email.toLowerCase().trim()
 
         // Find user with matching email, OTP and valid expiration
-        const user = await collection.findOne({
-            email: email,
-            resetPasswordToken: otp,
-            resetPasswordExpires: { $gt: new Date() }
+        const user = await prisma.user.findFirst({
+            where: {
+                email: normalizedEmail,
+                resetToken: otp,
+                resetTokenExpiry: {
+                    gt: new Date()
+                }
+            }
         })
 
         if (!user) {
@@ -37,19 +41,15 @@ export async function POST(req: Request) {
         const hashedPassword = await bcrypt.hash(newPassword, 10)
 
         // Update user
-        await collection.updateOne(
-            { _id: user._id },
-            {
-                $set: {
-                    password: hashedPassword,
-                    updatedAt: new Date()
-                },
-                $unset: {
-                    resetPasswordToken: "",
-                    resetPasswordExpires: ""
-                }
+        await prisma.user.update({
+            where: { id: user.id },
+            data: {
+                password: hashedPassword,
+                resetToken: null,
+                resetTokenExpiry: null,
+                updatedAt: new Date()
             }
-        )
+        })
 
         return NextResponse.json({ success: true, message: "Đổi mật khẩu thành công" })
 
@@ -58,3 +58,4 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Đã xảy ra lỗi" }, { status: 500 })
     }
 }
+

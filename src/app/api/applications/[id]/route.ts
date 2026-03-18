@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server"
-import { getCollection, COLLECTIONS } from "@/database/connection"
-import { ObjectId } from "mongodb"
+import prisma from "@/database/prisma"
 import { sendEmail } from "@/services/email.service"
 import { getInterviewEmailTemplate, getRejectedEmailTemplate, getHiredEmailTemplate } from "@/lib/email-templates"
 import { checkNotificationPreference } from "@/lib/notification-utils"
@@ -25,8 +24,12 @@ export async function GET(
         const userId = session.userId as string
         const userRole = session.role as string
 
-        const collection = await getCollection(COLLECTIONS.APPLICATIONS)
-        const application = await collection.findOne({ _id: new ObjectId(id) })
+        const application = await prisma.application.findUnique({
+            where: { id },
+            include: {
+                job: true
+            }
+        })
 
         if (!application) {
             return NextResponse.json({ error: "Application not found" }, { status: 404 })
@@ -34,8 +37,8 @@ export async function GET(
 
         // Authorization check
         const isAdmin = userRole === 'admin'
-        const isEmployer = userRole === 'employer' && (application.employerId === userId || application.employerId?.toString() === userId)
-        const isStudent = userRole === 'student' && (application.applicantId === userId || application.applicantId?.toString() === userId)
+        const isEmployer = userRole === 'employer' && application.job.creatorId === userId
+        const isStudent = userRole === 'student' && application.userId === userId
 
         if (!isAdmin && !isEmployer && !isStudent) {
             return NextResponse.json({ error: "Forbidden: You don't have access to this application" }, { status: 403 })
@@ -43,7 +46,13 @@ export async function GET(
 
         return NextResponse.json({
             success: true,
-            data: application
+            data: {
+                ...application,
+                _id: application.id,
+                applicantId: application.userId,
+                employerId: application.job.creatorId,
+                jobTitle: application.job.title
+            }
         })
     } catch (error) {
         console.error("Error fetching application:", error)
@@ -72,64 +81,49 @@ export async function PATCH(
         const userRole = session.role as string
 
         const body = await request.json()
-        const { status, notes } = body // Removed updaterId, updaterRole - we use session!
-
-        if (!id || !ObjectId.isValid(id)) {
-            return NextResponse.json({ error: "Invalid application ID" }, { status: 400 })
-        }
+        const { status, notes } = body
 
         const validStatuses = ["new", "reviewed", "interviewed", "rejected", "hired"]
         if (status && !validStatuses.includes(status)) {
             return NextResponse.json({ error: "Invalid status" }, { status: 400 })
         }
 
-        const collection = await getCollection(COLLECTIONS.APPLICATIONS)
-
         // Fetch application before update to check permissions and get metadata
-        const currentApplication = await collection.findOne({ _id: new ObjectId(id) })
+        const currentApplication = await prisma.application.findUnique({
+            where: { id },
+            include: {
+                job: true
+            }
+        })
+
         if (!currentApplication) {
             return NextResponse.json({ error: "Application not found" }, { status: 404 })
         }
 
         // Authorization check
         const isAdmin = userRole === 'admin'
-        const isOwner = userRole === 'employer' && (currentApplication.employerId === userId || currentApplication.employerId?.toString() === userId)
-
-        console.log(`[Auth Debug] App: ${id}, SessionUser: ${userId}, Role: ${userRole}, AppOwner: ${currentApplication.employerId}`)
+        const isOwner = userRole === 'employer' && currentApplication.job.creatorId === userId
 
         if (!isAdmin && !isOwner) {
-            console.log("[Auth Debug] ACCESS DENIED")
             return NextResponse.json({ error: "Bạn không có quyền cập nhật trạng thái này" }, { status: 403 })
         }
 
         // Logic check: Enforce hiring limit
         if (status === "hired" && currentApplication.status !== "hired") {
             try {
-                const jobsCollection = await getCollection(COLLECTIONS.JOBS)
-                const jobId = currentApplication.jobId
-
-                let job = null
-                if (ObjectId.isValid(jobId)) {
-                    job = await jobsCollection.findOne({ _id: new ObjectId(jobId) })
-                } else {
-                    job = await jobsCollection.findOne({ _id: jobId })
-                }
-
-                if (job) {
-                    // quantity -1 means unlimited
-                    if (job.quantity && job.quantity > 0) {
-                        const hiredCount = await collection.countDocuments({
-                            jobId: jobId,
+                const job = currentApplication.job
+                if (job.quantity && job.quantity > 0) {
+                    const hiredCount = await prisma.application.count({
+                        where: {
+                            jobId: job.id,
                             status: "hired"
-                        })
-
-                        console.log(`[Limit Check] Job: ${jobId}, Quantity: ${job.quantity}, Hired: ${hiredCount}`)
-
-                        if (hiredCount >= job.quantity) {
-                            return NextResponse.json({
-                                error: `Đã tuyển đủ số lượng (${job.quantity} người). Không thể tuyển thêm.`
-                            }, { status: 400 })
                         }
+                    })
+
+                    if (hiredCount >= job.quantity) {
+                        return NextResponse.json({
+                            error: `Đã tuyển đủ số lượng (${job.quantity} người). Không thể tuyển thêm.`
+                        }, { status: 400 })
                     }
                 }
             } catch (err) {
@@ -137,26 +131,22 @@ export async function PATCH(
             }
         }
 
-        const updateData: Record<string, any> = {
-            updatedAt: new Date()
-        }
+        const updateData: any = {}
         if (status) updateData.status = status
         if (notes !== undefined) updateData.notes = notes
 
-        await collection.updateOne(
-            { _id: new ObjectId(id) },
-            { $set: updateData }
-        )
+        await prisma.application.update({
+            where: { id },
+            data: updateData
+        })
 
-        // Create notification for student if status changed and applicantId exists
-        if (status && status !== currentApplication.status && currentApplication.applicantId) {
+        // Create notification for student if status changed
+        if (status && status !== currentApplication.status) {
             try {
-                const notificationsCollection = await getCollection(COLLECTIONS.NOTIFICATIONS)
-                const jobTitle = currentApplication.jobTitle || "công việc"
-
+                const jobTitle = currentApplication.job.title || "công việc"
                 let notificationTitle = ""
                 let notificationMessage = ""
-                let notificationType: "job" | "interview" | "system" = "job"
+                let notificationType = "job"
 
                 switch (status) {
                     case "reviewed":
@@ -179,24 +169,23 @@ export async function PATCH(
                 }
 
                 if (notificationTitle) {
-                    await notificationsCollection.insertOne({
-                        userId: currentApplication.applicantId,
-                        type: notificationType,
-                        title: notificationTitle,
-                        message: notificationMessage,
-                        read: false,
-                        createdAt: new Date(),
-                        link: `/dashboard/applications`,
-                        applicationId: id
+                    await prisma.notification.create({
+                        data: {
+                            userId: currentApplication.userId,
+                            type: notificationType,
+                            title: notificationTitle,
+                            message: notificationMessage,
+                            link: `/dashboard/applications`,
+                            contactId: null // Clear any contact association
+                        }
                     })
-                    console.log(`[Applications API] Created ${status} notification for student:`, currentApplication.applicantId)
                 }
 
                 // --- Send Email Notification to Candidate ---
                 if (["interviewed", "rejected", "hired"].includes(status)) {
                     const candidateEmail = currentApplication.email
-                    const candidateName = currentApplication.fullname
-                    const jobTitle = currentApplication.jobTitle
+                    const candidateName = currentApplication.name
+                    const jobTitle = currentApplication.job.title
 
                     let emailSubject = ""
                     let emailHtml = ""
@@ -213,23 +202,18 @@ export async function PATCH(
                     }
 
                     if (emailSubject && candidateEmail) {
-                        // Check student's email preference
-                        const shouldSendEmail = await checkNotificationPreference(currentApplication.applicantId, 'email')
-
+                        const shouldSendEmail = await checkNotificationPreference(currentApplication.userId, 'email')
                         if (shouldSendEmail) {
                             sendEmail({
                                 to: candidateEmail,
                                 subject: emailSubject,
                                 html: emailHtml
                             }).catch(err => console.error("Async email sending failed:", err))
-                        } else {
-                            console.log(`[Applications API] Email skipped for ${candidateEmail} (preference off)`)
                         }
                     }
                 }
             } catch (notifError) {
                 console.error("Failed to create student status notification:", notifError)
-                // Don't fail the main request if notification fails
             }
         }
 
@@ -250,7 +234,6 @@ export async function DELETE(
 ) {
     try {
         const { id } = await params
-
         const { cookies } = await import("next/headers")
         const { decrypt } = await import("@/lib/session")
         const cookieStore = await cookies()
@@ -264,28 +247,28 @@ export async function DELETE(
         const userId = session.userId as string
         const userRole = session.role as string
 
-        if (!id || !ObjectId.isValid(id)) {
-            return NextResponse.json({ error: "Invalid application ID" }, { status: 400 })
-        }
-
-        const collection = await getCollection(COLLECTIONS.APPLICATIONS)
-        const application = await collection.findOne({ _id: new ObjectId(id) })
+        const application = await prisma.application.findUnique({
+            where: { id },
+            include: {
+                job: true
+            }
+        })
 
         if (!application) {
             return NextResponse.json({ error: "Application not found" }, { status: 404 })
         }
 
-        // Authorization check: Only Admin or the Employer who owns the job can delete?
-        // Actually, usually only Admin can delete applications in this type of system
-        // unless employer needs to "archive" them. Let's stick with Admin or Job Owner.
+        // Authorization check
         const isAdmin = userRole === 'admin'
-        const isOwner = userRole === 'employer' && (application.employerId === userId || application.employerId?.toString() === userId)
+        const isOwner = userRole === 'employer' && application.job.creatorId === userId
 
         if (!isAdmin && !isOwner) {
             return NextResponse.json({ error: "Forbidden: You don't have permission to delete this application" }, { status: 403 })
         }
 
-        await collection.deleteOne({ _id: new ObjectId(id) })
+        await prisma.application.delete({
+            where: { id }
+        })
 
         return NextResponse.json({
             success: true,
@@ -296,3 +279,4 @@ export async function DELETE(
         return NextResponse.json({ error: "Failed to delete application" }, { status: 500 })
     }
 }
+

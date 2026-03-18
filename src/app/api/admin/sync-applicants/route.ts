@@ -1,42 +1,35 @@
 import { NextResponse } from "next/server"
-import { getCollection, COLLECTIONS } from "@/database/connection"
-import { ObjectId } from "mongodb"
+import prisma from "@/database/prisma"
 
 // Admin-only endpoint to sync applicant counts for all jobs
-export async function POST(request: Request) {
+export async function POST() {
     try {
-        const jobsCollection = await getCollection(COLLECTIONS.JOBS)
-        const applicationsCollection = await getCollection(COLLECTIONS.APPLICATIONS)
-
         // Get all jobs
-        const jobs = await jobsCollection.find({}).toArray()
+        const jobs = await prisma.job.findMany()
 
         let updatedCount = 0
         const results: { jobId: string; title: string; oldCount: number; newCount: number }[] = []
 
         for (const job of jobs) {
-            const jobIdStr = job._id.toString()
-
-            // Count applications for this job (try both ObjectId and string match)
-            const count = await applicationsCollection.countDocuments({
-                $or: [
-                    { jobId: jobIdStr },
-                    { jobId: job._id }
-                ]
+            // Count applications for this job
+            const count = await prisma.application.count({
+                where: {
+                    jobId: job.id
+                }
             })
 
             const oldCount = job.applicants || 0
 
-            // Update the job's applicants count
-            await jobsCollection.updateOne(
-                { _id: job._id },
-                { $set: { applicants: count } }
-            )
-
+            // Update the job's applicants count if it has changed
             if (oldCount !== count) {
+                await prisma.job.update({
+                    where: { id: job.id },
+                    data: { applicants: count }
+                })
+                
                 updatedCount++
                 results.push({
-                    jobId: jobIdStr,
+                    jobId: job.id,
                     title: job.title || "Unknown",
                     oldCount,
                     newCount: count
@@ -60,3 +53,4 @@ export async function POST(request: Request) {
         )
     }
 }
+

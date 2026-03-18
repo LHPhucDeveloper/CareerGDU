@@ -93,3 +93,4 @@ guidelines/
 # Deployment Platforms
 # =============================
 .vercel
+/generated/prisma

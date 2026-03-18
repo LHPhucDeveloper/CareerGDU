@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server"
-import { getCollection, COLLECTIONS } from "@/database/connection"
+import prisma from "@/database/prisma"
 
 export async function GET() {
     try {
-        // In real app, check auth here!
-        const collection = await getCollection(COLLECTIONS.CONTACTS)
-        const contacts = await collection.find().sort({ createdAt: -1 }).toArray()
+        // Auth check should be here in a real app, but preserving current logic
+        const contacts = await prisma.contact.findMany({
+            orderBy: {
+                createdAt: 'desc'
+            }
+        })
 
         return NextResponse.json({
             success: true,

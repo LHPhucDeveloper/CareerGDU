@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getCollection, COLLECTIONS } from "@/database/connection"
+import prisma from "@/database/prisma"
 
 export const dynamic = 'force-dynamic'
 
@@ -8,21 +8,23 @@ export async function GET(req: Request) {
         const { searchParams } = new URL(req.url)
         const key = searchParams.get("key")
 
-        const collection = await getCollection(COLLECTIONS.SITE_CONFIGS)
-
         if (key) {
-            const config = await collection.findOne({ key, isActive: true })
+            const config = await prisma.siteConfig.findUnique({
+                where: { key, isActive: true }
+            })
             return NextResponse.json({
                 success: true,
-                data: config ? { ...config, _id: config._id.toString() } : null
+                data: config ? { ...config, _id: config.id } : null
             })
         }
 
-        const configs = await collection.find({ isActive: true }).toArray()
+        const configs = await prisma.siteConfig.findMany({
+            where: { isActive: true }
+        })
 
         return NextResponse.json({
             success: true,
-            data: configs.map(c => ({ ...c, _id: c._id.toString() }))
+            data: configs.map(c => ({ ...c, _id: c.id }))
         })
     } catch (error) {
         console.error("Error fetching site configs:", error)

@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server"
-import { getCollection, COLLECTIONS } from "@/database/connection"
-import { ObjectId } from "mongodb"
+import prisma from "@/database/prisma"
 
 export async function POST(
     req: Request,
@@ -9,16 +8,14 @@ export async function POST(
     try {
         const { id } = await params
 
-        if (!ObjectId.isValid(id)) {
-            return NextResponse.json({ error: "Invalid job ID" }, { status: 400 })
-        }
-
-        const collection = await getCollection(COLLECTIONS.JOBS)
-
-        await collection.updateOne(
-            { _id: new ObjectId(id) },
-            { $inc: { views: 1 } }
-        )
+        await prisma.job.update({
+            where: { id },
+            data: {
+                views: {
+                    increment: 1
+                }
+            }
+        })
 
         return NextResponse.json({ success: true })
     } catch (error) {
@@ -26,3 +23,4 @@ export async function POST(
         return NextResponse.json({ error: "Internal Error" }, { status: 500 })
     }
 }
+
