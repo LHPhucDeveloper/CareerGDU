@@ -14,22 +14,34 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast"
 
 interface Application {
-    _id: string
-    jobId: string
-    jobTitle: string
-    companyName: string
+    id: string
+
     name: string
     email: string
     phone: string
-    message: string
-    cvOriginalName: string
+
     status: "pending" | "reviewed" | "interviewed" | "rejected" | "hired"
     appliedAt: string
-    employerId?: string
+
+    job?: {
+        title?: string
+        creatorId?: string
+    }
+
+    company?: {
+        name?: string
+    }
+
+    cvUrl?: string
+    cvBase64?: string
+    cvOriginalName?: string
+
     studentId?: string
     major?: string
     faculty?: string
     cohort?: string
+
+    coverLetter?: string
 }
 
 import { Suspense } from "react"
@@ -95,24 +107,26 @@ function ManageApplicationsContent() {
     const filteredApplications = applications.filter((app) => {
         const matchesSearch =
             safe(app.name).includes(safe(searchTerm)) ||
-            safe(app.jobTitle || (app as any).job?.title).includes(safe(searchTerm)) ||
+            safe(app.job?.title || (app as any).job?.title).includes(safe(searchTerm)) ||
             safe(app.email).includes(safe(searchTerm))
 
         const matchesStatus = statusFilter === "all" || app.status === statusFilter
-        const matchesJob = jobFilter === "all" || app.jobTitle === jobFilter
+        const matchesJob = jobFilter === "all" || app.job?.title === jobFilter
         const matchesCompany =
             user?.role !== "admin" ||
             companyFilter === "all" ||
-            app.companyName === companyFilter
+            app.company?.name === companyFilter
 
         return matchesSearch && matchesStatus && matchesJob && matchesCompany
     })
 
     // Get unique jobs and companies for filters
     const uniqueJobs = Array.from(
-        new Set(applications.map(app => app.jobTitle || (app as any).job?.title).filter(Boolean))
+        new Set(applications.map(app => app.job?.title || (app as any).job?.title).filter(Boolean))
     )
-    const uniqueCompanies = Array.from(new Set(applications.map(app => app.companyName)))
+    const uniqueCompanies = Array.from(
+        new Set(applications.map(app => app.company?.name))
+    ).filter(Boolean) as string[]
 
     useEffect(() => {
         if (!isLoading && user) {
@@ -124,7 +138,7 @@ function ManageApplicationsContent() {
     useEffect(() => {
         const idFromUrl = searchParams.get("id")
         if (idFromUrl && applications.length > 0) {
-            const targetApp = applications.find(app => app._id === idFromUrl)
+            const targetApp = applications.find(app => app.id === idFromUrl)
             if (targetApp) {
                 console.log("Deep linking to application:", idFromUrl)
                 handleViewCV(targetApp)
@@ -171,6 +185,7 @@ function ManageApplicationsContent() {
         setViewMode("cv")
         setCvLoading(true)
 
+        // clear old blob URL
         setCvUrl((prev) => {
             if (prev?.startsWith("blob:")) {
                 URL.revokeObjectURL(prev)
@@ -178,16 +193,25 @@ function ManageApplicationsContent() {
             return null
         })
 
+        // auto update status
         if (app.status === "pending") {
-            handleStatusChange(app._id, "reviewed")
+            handleStatusChange(app.id, "reviewed")
         }
 
         try {
-            const res = await fetch(`/api/applications/${app._id}`)
+            const res = await fetch(`/api/applications/${app.id}`)
             const data = await res.json()
 
-            if (data.success && data.data.cvBase64) {
-                const blobUrl = base64ToBlobUrl(data.data.cvBase64)
+            if (!data.success) {
+                throw new Error("API failed")
+            }
+
+            const cvBase64 = data.data?.cvBase64
+            const cvUrl = data.data?.cvUrl
+
+            // ✅ CASE 1: base64
+            if (cvBase64) {
+                const blobUrl = base64ToBlobUrl(cvBase64)
 
                 if (blobUrl) {
                     setCvUrl(blobUrl)
@@ -198,32 +222,32 @@ function ManageApplicationsContent() {
                         variant: "destructive"
                     })
                 }
+
+                // ✅ CASE 2: URL
+            } else if (cvUrl) {
+                setCvUrl(cvUrl)
+
+                // ✅ CASE 3: không có CV
             } else {
-                toast({
-                    title: "Lỗi",
-                    description: "Không thể tải CV",
-                    variant: "destructive"
-                })
+                setCvUrl(null)
             }
+
         } catch (error) {
             console.error("Error fetching CV:", error)
+
             toast({
                 title: "Lỗi",
                 description: "Có lỗi khi tải CV",
                 variant: "destructive"
             })
+
+            setCvUrl(null)
         } finally {
             setCvLoading(false)
         }
     }
 
-    useEffect(() => {
-        return () => {
-            if (cvUrl?.startsWith("blob:")) {
-                URL.revokeObjectURL(cvUrl)
-            }
-        }
-    }, [cvUrl])
+    const hasCV = selectedApp?.cvBase64 || selectedApp?.cvUrl
 
     const handleViewDetails = (app: Application) => {
         setSelectedApp(app)
@@ -231,7 +255,7 @@ function ManageApplicationsContent() {
 
         // Auto-update status to "Reviewed" if currently "pending"
         if (app.status === "pending") {
-            handleStatusChange(app._id, "reviewed")
+            handleStatusChange(app.id, "reviewed")
         }
     }
 
@@ -266,7 +290,7 @@ function ManageApplicationsContent() {
 
             if (res.ok) {
                 setApplications(prev =>
-                    prev.map(app => app._id === appId ? { ...app, status: newStatus as Application["status"] } : app)
+                    prev.map(app => app.id === appId ? { ...app, status: newStatus as Application["status"] } : app)
                 )
 
                 const statusText: Record<string, string> = {
@@ -459,12 +483,12 @@ function ManageApplicationsContent() {
                                     </TableHeader>
                                     <TableBody>
                                         {filteredApplications.map((app) => (
-                                            <TableRow key={app._id}>
+                                            <TableRow key={app.id}>
                                                 <TableCell>
                                                     <div className="font-medium text-blue-900">
-                                                        {app.jobTitle || (app as any).job?.title || "N/A"}
+                                                        {app.job?.title || (app as any).job?.title || "N/A"}
                                                     </div>
-                                                    <div className="text-sm text-gray-500">{app.companyName}</div>
+                                                    <div className="text-sm text-gray-500">{app.company?.name}</div>
                                                 </TableCell>
                                                 <TableCell>
                                                     <div className="flex items-center gap-2">
@@ -504,8 +528,11 @@ function ManageApplicationsContent() {
                                                 <TableCell>
                                                     <Select
                                                         value={app.status || "pending"}
-                                                        onValueChange={(value) => handleStatusChange(app._id, value)}
-                                                        disabled={user?.role === 'employer' && app.employerId !== currentUserId}
+                                                        onValueChange={(value) => handleStatusChange(app.id, value)}
+                                                        disabled={
+                                                            user?.role === "employer" &&
+                                                            app.job?.creatorId !== currentUserId
+                                                        }
                                                     >
                                                         <SelectTrigger className="w-[140px] h-8">
                                                             <SelectValue>{getStatusBadge(app.status)}</SelectValue>
@@ -557,11 +584,11 @@ function ManageApplicationsContent() {
                                 {/* Mobile Card View */}
                                 <div className="grid grid-cols-1 gap-4 lg:hidden">
                                     {filteredApplications.map((app) => (
-                                        <div key={app._id} className="p-4 rounded-xl border border-gray-100 bg-white shadow-sm space-y-4">
+                                        <div key={app.id} className="p-4 rounded-xl border border-gray-100 bg-white shadow-sm space-y-4">
                                             <div className="flex justify-between items-start">
                                                 <div className="min-w-0 flex-1">
-                                                    <h3 className="font-bold text-blue-900 truncate pr-2">{app.jobTitle}</h3>
-                                                    <p className="text-xs text-gray-500 truncate">{app.companyName}</p>
+                                                    <h3 className="font-bold text-blue-900 truncate pr-2">{app.job?.title}</h3>
+                                                    <p className="text-xs text-gray-500 truncate">{app.company?.name}</p>
                                                 </div>
                                                 {getStatusBadge(app.status)}
                                             </div>
@@ -600,8 +627,11 @@ function ManageApplicationsContent() {
                                                 </Button>
                                                 <Select
                                                     value={app.status || "pending"}
-                                                    onValueChange={(value) => handleStatusChange(app._id, value)}
-                                                    disabled={user?.role === 'employer' && app.employerId !== currentUserId}
+                                                    onValueChange={(value) => handleStatusChange(app.id, value)}
+                                                    disabled={
+                                                        user?.role === "employer" &&
+                                                        app.job?.creatorId !== currentUserId
+                                                    }
                                                 >
                                                     <SelectTrigger className="flex-1 h-9">
                                                         <SelectValue />
@@ -645,7 +675,7 @@ function ManageApplicationsContent() {
                                 {viewMode === 'cv' ? "Xem CV: " : "Chi tiết hồ sơ: "} {selectedApp?.name}
                             </span>
                             <div className="flex items-center gap-2 shrink-0">
-                                <Badge variant="outline" className="hidden sm:inline-flex">{selectedApp?.jobTitle}</Badge>
+                                <Badge variant="outline" className="hidden sm:inline-flex">{selectedApp?.job?.title}</Badge>
                                 {viewMode === 'cv' ? (
                                     <Button variant="outline" size="sm" onClick={() => selectedApp && handleViewCV(selectedApp)} className="h-8">
                                         <RotateCcw className="h-3 w-3 mr-1" />
@@ -676,17 +706,18 @@ function ManageApplicationsContent() {
                                 <div className="absolute inset-0 flex items-center justify-center">
                                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                                 </div>
+                            ) : !hasCV ? (
+                                <div className="absolute inset-0 flex items-center justify-center text-gray-500 flex-col gap-2">
+                                    <FileText className="h-10 w-10 text-gray-300" />
+                                    <span>Ứng viên chưa nộp CV</span>
+                                </div>
                             ) : cvUrl ? (
-                                <iframe
-                                    src={cvUrl}
-                                    className="w-full h-full"
-                                    title="CV Preview"
-                                />
+                                <iframe src={cvUrl} className="w-full h-full" />
                             ) : (
                                 <div className="absolute inset-0 flex items-center justify-center text-gray-500 flex-col gap-2">
                                     <FileText className="h-10 w-10 text-gray-300" />
                                     <span>Không thể hiển thị CV</span>
-                                    <Button variant="outline" size="sm" onClick={() => selectedApp && handleViewCV(selectedApp)}>
+                                    <Button onClick={() => selectedApp && handleViewCV(selectedApp)}>
                                         Thử lại
                                     </Button>
                                 </div>
@@ -745,7 +776,7 @@ function ManageApplicationsContent() {
                                             </div>
                                             <Select
                                                 value={selectedApp?.status}
-                                                onValueChange={(value) => selectedApp && handleStatusChange(selectedApp._id, value)}
+                                                onValueChange={(value) => selectedApp && handleStatusChange(selectedApp.id, value)}
                                             >
                                                 <SelectTrigger className="w-full bg-white">
                                                     <SelectValue placeholder="Cập nhật trạng thái" />
@@ -765,10 +796,15 @@ function ManageApplicationsContent() {
                                     </div>
 
                                     <div>
-                                        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Lời giới thiệu</h4>
+                                        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
+                                            Lời giới thiệu
+                                        </h4>
+
                                         <div className="bg-yellow-50/30 p-4 rounded-xl min-h-[140px]">
                                             <p className="text-sm text-gray-700 whitespace-pre-wrap italic">
-                                                {selectedApp?.message ? `"${selectedApp.message}"` : "Không có lời nhắn."}
+                                                {selectedApp?.coverLetter
+                                                    ? `"${selectedApp.coverLetter}"`
+                                                    : "Không có lời nhắn."}
                                             </p>
                                         </div>
                                     </div>
