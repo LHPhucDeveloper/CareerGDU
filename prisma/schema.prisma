@@ -127,13 +127,14 @@ model Job {
   relatedMajors   Json?
 
   postedAt        DateTime  @default(now())
+  updatedAt       DateTime? @updatedAt
   status          String    @default("pending") // pending, active, filled, expired
   applicants      Int       @default(0)
   views           Int       @default(0)
   quantity        Int       @default(1)
   contactEmail    String?
   contactPhone    String?
-  documentUrl     String?
+  documentUrl     String? @db.Text
   documentName    String?
   logoFit         String?   @default("cover")
   adminFeedback   String?   @db.Text

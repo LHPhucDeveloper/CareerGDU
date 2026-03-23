@@ -5,10 +5,10 @@ import { revalidatePath } from "next/cache"
 // DELETE /api/jobs/[id]
 export async function DELETE(
     req: Request,
-    { params }: { params: Promise<{ id: string }> }
+    { params }: { params: { id: string } }
 ) {
     try {
-        const { id } = await params
+        const { id } = params
 
         // In real app: Check if user owns this job before deleting!
         const result = await prisma.job.delete({
@@ -31,10 +31,10 @@ export async function DELETE(
 // PATCH /api/jobs/[id] - Update Job Details
 export async function PATCH(
     req: Request,
-    { params }: { params: Promise<{ id: string }> }
+    { params }: { params: { id: string } }
 ) {
     try {
-        const { id } = await params
+        const { id } = params
         const body = await req.json()
 
         // Filter fields to safeguard
@@ -49,12 +49,58 @@ export async function PATCH(
             return NextResponse.json({ error: "Job not found" }, { status: 404 })
         }
 
-        const updateData: any = {
-            ...updateFields
+        const updateData: any = {}
+
+        if (updateFields.title !== undefined) updateData.title = updateFields.title
+        if (updateFields.company !== undefined) updateData.company = updateFields.company
+        if (updateFields.description !== undefined) updateData.description = updateFields.description
+
+        if (updateFields.requirements !== undefined) {
+            updateData.requirements = Array.isArray(updateFields.requirements)
+                ? updateFields.requirements
+                : []
+        }
+
+        if (updateFields.benefits !== undefined) {
+            updateData.benefits = Array.isArray(updateFields.benefits)
+                ? updateFields.benefits
+                : []
+        }
+
+        if (updateFields.salaryMin !== undefined) {
+            const num = Number(updateFields.salaryMin)
+            updateData.salaryMin = isNaN(num) ? null : num
+        }
+
+        if (updateFields.salaryMax !== undefined) {
+            const num = Number(updateFields.salaryMax)
+            updateData.salaryMax = isNaN(num) ? null : num
+        }
+
+        if (updateFields.status !== undefined) {
+            updateData.status = updateFields.status
+        }
+
+        if (updateFields.adminFeedback !== undefined) {
+            updateData.adminFeedback = updateFields.adminFeedback
+        }
+
+        if (updateFields.documentUrl !== undefined) {
+            if (
+                typeof updateFields.documentUrl === "string" &&
+                updateFields.documentUrl.startsWith("data:")
+            ) {
+                updateData.documentUrl = null
+            } else if (typeof updateFields.documentUrl === "string") {
+                updateData.documentUrl = updateFields.documentUrl
+            }
         }
 
         // If job is being activated or renewed, refresh the postedAt date
-        if (updateFields.status === 'active' && !updateFields.postedAt) {
+        if (
+            updateData.status === 'active' &&
+            currentJob.status !== 'active'
+        ) {
             updateData.postedAt = new Date()
         }
 
@@ -116,10 +162,10 @@ export async function PATCH(
 // GET /api/jobs/[id] - Get Single Job Details for Edit
 export async function GET(
     req: Request,
-    { params }: { params: Promise<{ id: string }> }
+    { params }: { params: { id: string } }
 ) {
     try {
-        const { id } = await params
+        const { id } = params
 
         const job = await prisma.job.findUnique({
             where: { id }

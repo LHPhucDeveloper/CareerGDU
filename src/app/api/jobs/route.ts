@@ -165,41 +165,64 @@ export async function POST(req: Request) {
     }
 
     // 2. Save logo
-    const logoUrl = await saveBase64Image(body.logo, "logos")
+const logoUrl = await saveBase64Image(body.logo, "logos")
 
-    // 3. Create Job
-    const newJob = await prisma.job.create({
-      data: {
-        title,
-        company,
-        website: website || null,
-        companyId: companyId || "unknown",
-        logo: logoUrl || "/placeholder.svg?height=100&width=100",
-        location,
-        type,
-        field,
-        experience: experience || null,
-        education: education || null,
-        salary: isNegotiable ? "Thỏa thuận" : salary,
-        salaryMin: salaryMin ? parseFloat(salaryMin) : null,
-        salaryMax: salaryMax ? parseFloat(salaryMax) : null,
-        isNegotiable: isNegotiable || false,
-        deadline,
-        description,
-        requirements: requirements || [],
-        benefits: benefits || [],
-        detailedBenefits: detailedBenefits || [],
-        relatedMajors: relatedMajors || [],
-        status: role === 'admin' ? 'active' : 'pending',
-        quantity: quantity || 1,
-        contactEmail: contactEmail || null,
-        contactPhone: contactPhone || null,
-        documentUrl: documentUrl || null,
-        documentName: documentName || null,
-        logoFit: logoFit || "cover",
-        creatorId: creatorId
-      }
-    })
+// 🔥 NEW: Save document
+let documentFileUrl = null
+
+if (body.documentUrl && typeof body.documentUrl === "string") {
+  if (body.documentUrl.startsWith("data:")) {
+    const uploaded = await saveBase64Image(body.documentUrl, "documents")
+
+    if (!uploaded) {
+      return NextResponse.json(
+        { error: "Upload file thất bại" },
+        { status: 400 }
+      )
+    }
+
+    documentFileUrl = uploaded
+  } else {
+    documentFileUrl = body.documentUrl
+  }
+}
+
+// 3. Create Job
+const newJob = await prisma.job.create({
+  data: {
+    title,
+    company,
+    website: website || null,
+    companyId: companyId || "unknown",
+    logo: logoUrl || "/placeholder.svg",
+    location,
+    type,
+    field,
+    experience: experience || null,
+    education: education || null,
+    salary: isNegotiable ? "Thỏa thuận" : salary,
+    salaryMin: salaryMin ? parseFloat(salaryMin) : null,
+    salaryMax: salaryMax ? parseFloat(salaryMax) : null,
+    isNegotiable: isNegotiable || false,
+    deadline,
+    description,
+    requirements: requirements || [],
+    benefits: benefits || [],
+    detailedBenefits: detailedBenefits || [],
+    relatedMajors: relatedMajors || [],
+    status: role === 'admin' ? 'active' : 'pending',
+    quantity: quantity || 1,
+    contactEmail: contactEmail || null,
+    contactPhone: contactPhone || null,
+
+    // 🔥 FIX
+    documentUrl: documentFileUrl,
+    documentName: documentName || null,
+
+    logoFit: logoFit || "cover",
+    creatorId
+  }
+})
 
     // 4. Create Notification for Admin if pending
     if (newJob.status === 'pending') {

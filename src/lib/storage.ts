@@ -8,22 +8,35 @@ import { v4 as uuidv4 } from "uuid"
  * @param subDir Thư mục con (ví dụ: 'avatars', 'slides', 'logos')
  * @returns URL để truy cập tệp tin (ví dụ: '/uploads/avatars/abc.png')
  */
-export async function saveBase64Image(base64: string, subDir: string): Promise<string> {
+export async function saveBase64Image(base64: string, subDir: string): Promise<string | null> {
     if (!base64 || !base64.startsWith("data:")) {
-        return base64 // Không phải base64 hoặc đã là URL
+        return base64 // nếu là URL sẵn thì giữ nguyên
     }
 
     try {
-        const matches = base64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/)
+        // ✅ FIX: regex support mọi mime type
+        const matches = base64.match(/^data:(.+);base64,(.+)$/)
+
         if (!matches || matches.length !== 3) {
             throw new Error("Invalid base64 format")
         }
 
-        const contentType = matches[1]
-        const extension = contentType.split("/")[1] || "png"
-        const buffer = Buffer.from(matches[2], "base64")
+        const mimeType = matches[1]
+        const base64Data = matches[2]
+
+        const buffer = Buffer.from(base64Data, "base64")
+
+        // ✅ FIX: map extension chuẩn
+        let extension = "bin"
+
+        if (mimeType.includes("pdf")) extension = "pdf"
+        else if (mimeType.includes("msword")) extension = "doc"
+        else if (mimeType.includes("officedocument")) extension = "docx"
+        else if (mimeType.includes("image")) extension = mimeType.split("/")[1]
+        else extension = mimeType.split("/")[1] || "bin"
 
         const fileName = `${uuidv4()}.${extension}`
+
         const uploadDir = path.join(process.cwd(), "public", "uploads", subDir)
 
         if (!fs.existsSync(uploadDir)) {
@@ -31,12 +44,15 @@ export async function saveBase64Image(base64: string, subDir: string): Promise<s
         }
 
         const filePath = path.join(uploadDir, fileName)
+
         fs.writeFileSync(filePath, buffer)
 
         return `/uploads/${subDir}/${fileName}`
     } catch (error) {
         console.error("[Storage] Error saving base64:", error)
-        return base64
+
+        // ❌ QUAN TRỌNG: KHÔNG return base64 nữa
+        return null
     }
 }
 
