@@ -25,6 +25,13 @@ export async function POST(request: Request) {
     const message = formData.get("message") as string
     const applicantId = formData.get("applicantId") as string // User ID for notifications
 
+    if (!applicantId) {
+      return NextResponse.json(
+        { error: "Bạn cần đăng nhập để ứng tuyển" },
+        { status: 401 }
+      )
+    }
+
     // Verify applicant still exists if logged in
     if (applicantId) {
       const user = await prisma.user.findUnique({ where: { id: applicantId } })
@@ -114,22 +121,22 @@ export async function POST(request: Request) {
       const app = await tx.application.create({
         data: {
           jobId,
-          jobTitle,
-          companyName,
-          employerId: employerId || null,
-          applicantId: applicantId || null,
-          fullname,
+          userId: applicantId, // BẮT BUỘC vì schema có relation
+
+          name: fullname,
           email,
           phone,
-          mssv,
+          studentId: mssv,
           major,
-          faculty: faculty || null,
-          cohort: cohort || null,
-          message: message || null,
-          status: "new",
-          cvPath: cvPath,
+          gpa: null,
+
+          coverLetter: message || null,
+
+          cvUrl: cvPath,
           cvOriginalName: cvOriginalName,
-          cvMimeType: cvMimeType
+          cvType: cvMimeType,
+
+          status: "pending"
         }
       })
 
@@ -278,9 +285,10 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const jobId = searchParams.get("jobId")
 
-    // Get session
+    // ===== GET SESSION =====
     const { cookies } = await import("next/headers")
     const { decrypt } = await import("@/lib/session")
+
     const cookieStore = await cookies()
     const sessionCookie = cookieStore.get("session")?.value
     const session = await decrypt(sessionCookie)
@@ -294,64 +302,70 @@ export async function GET(request: Request) {
 
     let where: any = {}
 
+    // ===== ROLE LOGIC =====
     if (userRole === "admin") {
-      // Admins see everything
-    } else if (userRole === "employer") {
-      where.employerId = userId
-    } else {
-      // Student: Match by applicantId or email (fallback)
-      const currentUser = await prisma.user.findUnique({ where: { id: userId } })
-      if (!currentUser) return NextResponse.json({ success: true, data: [] })
-      
+      // Admin thấy tất cả
+    } 
+    else if (userRole === "employer") {
+      // Employer thấy application thuộc job mình tạo
+      where.job = {
+        creatorId: userId
+      }
+    } 
+    else {
+      // Student: lấy theo userId (FIX ISSUE 3)
+      const currentUser = await prisma.user.findUnique({
+        where: { id: userId }
+      })
+
+      if (!currentUser) {
+        return NextResponse.json({ success: true, data: [] })
+      }
+
       where.OR = [
-        { applicantId: userId },
-        { email: currentUser.email }
+        { userId: userId },                 // ✅ FIX CHÍNH
+        { email: currentUser.email }        // fallback
       ]
     }
 
+    // ===== FILTER THEO JOB =====
     if (jobId) {
       where.jobId = jobId
     }
 
+    // ===== QUERY =====
     const applications = await prisma.application.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        jobId: true,
-        jobTitle: true,
-        companyName: true,
-        employerId: true,
-        applicantId: true,
-        fullname: true,
-        email: true,
-        phone: true,
-        mssv: true,
-        major: true,
-        faculty: true,
-        cohort: true,
-        message: true,
-        status: true,
-        createdAt: true,
-        cvOriginalName: true,
-        cvMimeType: true,
-        cvPath: true
+      orderBy: { appliedAt: "desc" },
+      include: {
+        job: {
+          select: {
+            id: true,
+            title: true,
+            company: true,
+            creatorId: true
+          }
+        }
       }
     })
 
-    // To maintain compatibility with MongoDB _id
+    // ===== MAP DATA =====
     const mappedApplications = applications.map(app => ({
       ...app,
-      _id: app.id
+      _id: app.id // giữ compatibility FE
     }))
 
     return NextResponse.json({
       success: true,
       data: mappedApplications
     })
+
   } catch (error) {
     console.error("Fetch applications error:", error)
-    return NextResponse.json({ error: "Failed to fetch applications" }, { status: 500 })
+    return NextResponse.json(
+      { error: "Failed to fetch applications" },
+      { status: 500 }
+    )
   }
 }
 

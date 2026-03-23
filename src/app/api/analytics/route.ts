@@ -19,47 +19,54 @@ export async function GET() {
         const thisMonthStart = getStartOfMonth(now)
         const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
 
-        // ============== SUMMARY STATS ==============
-
-        // Visitors
+        // ===== VISITORS =====
         const totalVisitors = await prisma.visitor.count()
+
         const visitorsThisMonth = await prisma.visitor.count({
             where: { visitedAt: { gte: thisMonthStart } }
         })
+
         const visitorsLastMonth = await prisma.visitor.count({
             where: { visitedAt: { gte: lastMonthStart, lt: thisMonthStart } }
         })
+
         const visitorsChange = visitorsLastMonth > 0
             ? Math.round(((visitorsThisMonth - visitorsLastMonth) / visitorsLastMonth) * 100)
             : 100
 
-        // New students
+        // ===== USERS =====
         const newStudentsThisMonth = await prisma.user.count({
             where: { role: "student", createdAt: { gte: thisMonthStart } }
         })
+
         const newStudentsLastMonth = await prisma.user.count({
             where: { role: "student", createdAt: { gte: lastMonthStart, lt: thisMonthStart } }
         })
+
         const studentsChange = newStudentsLastMonth > 0
             ? Math.round(((newStudentsThisMonth - newStudentsLastMonth) / newStudentsLastMonth) * 100)
             : 100
 
-        // New jobs
+        // ===== JOBS =====
         const newJobsThisMonth = await prisma.job.count({
-            where: { createdAt: { gte: thisMonthStart } }
+            where: { postedAt: { gte: thisMonthStart } }
         })
+
         const newJobsLastMonth = await prisma.job.count({
-            where: { createdAt: { gte: lastMonthStart, lt: thisMonthStart } }
+            where: { postedAt: { gte: lastMonthStart, lt: thisMonthStart } }
         })
+
         const jobsChange = newJobsLastMonth > 0
             ? Math.round(((newJobsThisMonth - newJobsLastMonth) / newJobsLastMonth) * 100)
             : 100
 
-        // Application rate
+        // ===== APPLICATION =====
         const totalApplications = await prisma.application.count()
+
         const jobViewsAgg = await prisma.job.aggregate({
             _sum: { views: true }
         })
+
         const views = jobViewsAgg._sum.views || 1
         const applicationRate = Math.round((totalApplications / views) * 100)
 
@@ -67,15 +74,18 @@ export async function GET() {
         const applicationsThisMonth = await prisma.application.count({
             where: { appliedAt: { gte: thisMonthStart } }
         })
+
         const applicationsLastMonth = await prisma.application.count({
             where: { appliedAt: { gte: lastMonthStart, lt: thisMonthStart } }
         })
+
         const rateChange = applicationsLastMonth > 0
             ? Math.round(((applicationsThisMonth - applicationsLastMonth) / applicationsLastMonth) * 100)
             : 0
 
-        // ============== TRAFFIC DATA (Last 12 months) ==============
+        // ===== TRAFFIC =====
         const trafficData = []
+
         for (let i = 11; i >= 0; i--) {
             const mStart = new Date(now.getFullYear(), now.getMonth() - i, 1)
             const mEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59)
@@ -91,8 +101,9 @@ export async function GET() {
             })
         }
 
-        // ============== USER GROWTH DATA (Last 6 months) ==============
+        // ===== USER GROWTH =====
         const userGrowthData = []
+
         for (let i = 5; i >= 0; i--) {
             const mStart = new Date(now.getFullYear(), now.getMonth() - i, 1)
             const mEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59)
@@ -100,6 +111,7 @@ export async function GET() {
             const studentsCount = await prisma.user.count({
                 where: { role: "student", createdAt: { lte: mEnd } }
             })
+
             const employersCount = await prisma.user.count({
                 where: { role: "employer", createdAt: { lte: mEnd } }
             })
@@ -111,26 +123,41 @@ export async function GET() {
             })
         }
 
-        // ============== JOB CATEGORY DATA ==============
+        // ===== JOB CATEGORY =====
         const jobEntriesByField = await prisma.job.groupBy({
             by: ['field'],
             where: { status: "active" },
             _count: { id: true },
-            orderBy: { _count: { id: 'desc' } },
+            orderBy: {
+                _count: {
+                    id: 'desc'
+                }
+            },
             take: 6
         })
 
         const jobCategoryData = await Promise.all(
             jobEntriesByField.map(async (entry) => {
-                const field = entry.field
-                const applicationsCount = await prisma.application.count({
-                    where: { job: { field: field } }
-                })
+                try {
+                    const applicationsCount = await prisma.application.count({
+                        where: {
+                            job: {
+                                field: entry.field || undefined
+                            }
+                        }
+                    })
 
-                return {
-                    name: field || "Khác",
-                    jobs: entry._count.id,
-                    applications: applicationsCount
+                    return {
+                        name: entry.field || "Khác",
+                        jobs: entry._count.id,
+                        applications: applicationsCount
+                    }
+                } catch {
+                    return {
+                        name: entry.field || "Khác",
+                        jobs: entry._count.id,
+                        applications: 0
+                    }
                 }
             })
         )
@@ -155,9 +182,13 @@ export async function GET() {
                 jobCategoryData
             }
         })
+
     } catch (error) {
-        console.error("Analytics API error:", error)
-        return NextResponse.json({ success: false, error: "Failed to fetch analytics" }, { status: 500 })
+        console.error("🔥 Analytics API error:", error)
+
+        return NextResponse.json({
+            success: false,
+            error: "Failed to fetch analytics"
+        }, { status: 500 })
     }
 }
-

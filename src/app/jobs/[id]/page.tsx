@@ -13,9 +13,9 @@ import { ViewTracker } from "@/components/jobs/view-tracker"
 import { ReportJobDialog } from "@/components/jobs/report-job-dialog"
 
 interface JobPageProps {
-    params: Promise<{
+    params: {
         id: string
-    }>
+    }
 }
 
 export const dynamic = "force-dynamic"
@@ -40,8 +40,8 @@ const parseDateHelper = (dateVal: any): Date => {
     }
 }
 
-export default async function JobPage(props: JobPageProps) {
-    const params = await props.params;
+export default async function JobPage({ params }: JobPageProps) {
+    const id = params.id
     let job: any = null
 
     // 1. Fetch from DB using Prisma

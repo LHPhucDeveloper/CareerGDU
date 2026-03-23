@@ -45,15 +45,24 @@ export async function GET(
         }
 
         return NextResponse.json({
-            success: true,
-            data: {
-                ...application,
-                _id: application.id,
-                applicantId: application.userId,
-                employerId: application.job.creatorId,
-                jobTitle: application.job.title
-            }
-        })
+  success: true,
+  data: {
+    _id: application.id,
+    jobId: application.jobId,
+    applicantId: application.userId,
+    employerId: application.job.creatorId,
+
+    jobTitle: application.job.title,
+
+    // ✅ FIX CV
+    cvUrl: application.cvUrl,
+    cvType: application.cvType,
+    cvOriginalName: application.cvOriginalName,
+
+    status: application.status,
+    appliedAt: application.appliedAt
+  }
+})
     } catch (error) {
         console.error("Error fetching application:", error)
         return NextResponse.json({ error: "Failed to fetch application" }, { status: 500 })
