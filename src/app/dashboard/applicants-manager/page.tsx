@@ -18,13 +18,13 @@ interface Application {
     jobId: string
     jobTitle: string
     companyName: string
-    fullname: string
+    name: string
     email: string
     phone: string
     message: string
     cvOriginalName: string
-    status: "new" | "reviewed" | "interviewed" | "rejected" | "hired"
-    createdAt: string
+    status: "pending" | "reviewed" | "interviewed" | "rejected" | "hired"
+    appliedAt: string
     employerId?: string
     studentId?: string
     major?: string
@@ -84,21 +84,34 @@ function ManageApplicationsContent() {
     const [companyFilter, setCompanyFilter] = useState("all")
 
     // Filtered data logic
+    const safe = (v?: string) => (v || "").toLowerCase()
+
+    const formatDate = (d?: string) => {
+        if (!d) return "N/A"
+        const date = new Date(d)
+        return isNaN(date.getTime()) ? "N/A" : date.toLocaleDateString("vi-VN")
+    }
+
     const filteredApplications = applications.filter((app) => {
         const matchesSearch =
-            app.fullname.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            app.jobTitle.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            app.email.toLowerCase().includes(searchTerm.toLowerCase())
+            safe(app.name).includes(safe(searchTerm)) ||
+            safe(app.jobTitle || (app as any).job?.title).includes(safe(searchTerm)) ||
+            safe(app.email).includes(safe(searchTerm))
 
         const matchesStatus = statusFilter === "all" || app.status === statusFilter
         const matchesJob = jobFilter === "all" || app.jobTitle === jobFilter
-        const matchesCompany = companyFilter === "all" || app.companyName === companyFilter
+        const matchesCompany =
+            user?.role !== "admin" ||
+            companyFilter === "all" ||
+            app.companyName === companyFilter
 
         return matchesSearch && matchesStatus && matchesJob && matchesCompany
     })
 
     // Get unique jobs and companies for filters
-    const uniqueJobs = Array.from(new Set(applications.map(app => app.jobTitle)))
+    const uniqueJobs = Array.from(
+        new Set(applications.map(app => app.jobTitle || (app as any).job?.title).filter(Boolean))
+    )
     const uniqueCompanies = Array.from(new Set(applications.map(app => app.companyName)))
 
     useEffect(() => {
@@ -165,7 +178,7 @@ function ManageApplicationsContent() {
             return null
         })
 
-        if (app.status === "new") {
+        if (app.status === "pending") {
             handleStatusChange(app._id, "reviewed")
         }
 
@@ -216,15 +229,15 @@ function ManageApplicationsContent() {
         setSelectedApp(app)
         setViewMode("details")
 
-        // Auto-update status to "Reviewed" if currently "New"
-        if (app.status === "new") {
+        // Auto-update status to "Reviewed" if currently "pending"
+        if (app.status === "pending") {
             handleStatusChange(app._id, "reviewed")
         }
     }
 
     const getStatusBadge = (status: string) => {
         switch (status) {
-            case "new":
+            case "pending":
                 return <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100">Mới</Badge>
             case "reviewed":
                 return <Badge className="bg-yellow-100 text-yellow-700 hover:bg-yellow-100">Đã xem</Badge>
@@ -358,7 +371,7 @@ function ManageApplicationsContent() {
                         </SelectTrigger>
                         <SelectContent>
                             <SelectItem value="all">Tất cả trạng thái</SelectItem>
-                            <SelectItem value="new">Mới</SelectItem>
+                            <SelectItem value="pending">Mới</SelectItem>
                             <SelectItem value="reviewed">Đã xem</SelectItem>
                             <SelectItem value="interviewed">Phỏng vấn</SelectItem>
                             <SelectItem value="hired">Đã tuyển</SelectItem>
@@ -378,36 +391,39 @@ function ManageApplicationsContent() {
                         </SelectContent>
                     </Select>
 
-                    <div className="flex gap-2">
-                        <Select value={companyFilter} onValueChange={setCompanyFilter}>
-                            <SelectTrigger className="h-10 flex-1">
-                                <SelectValue placeholder="Doanh nghiệp" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">Tất cả doanh nghiệp</SelectItem>
-                                {uniqueCompanies.map(company => (
-                                    <SelectItem key={company} value={company}>{company}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
+                    {user?.role === "admin" && (
+                        <div className="flex gap-2">
+                            <Select value={companyFilter} onValueChange={setCompanyFilter}>
+                                <SelectTrigger className="h-10 flex-1">
+                                    <SelectValue placeholder="Doanh nghiệp" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">Tất cả doanh nghiệp</SelectItem>
+                                    {uniqueCompanies.map(company => (
+                                        <SelectItem key={company} value={company}>
+                                            {company}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
 
-                        {(searchTerm || statusFilter !== "all" || jobFilter !== "all" || companyFilter !== "all") && (
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => {
-                                    setSearchTerm("")
-                                    setStatusFilter("all")
-                                    setJobFilter("all")
-                                    setCompanyFilter("all")
-                                }}
-                                className="h-10 w-10 shrink-0 text-red-500 hover:text-red-600 hover:bg-red-50"
-                                title="Xóa bộ lọc"
-                            >
-                                <RotateCcw className="h-4 w-4" />
-                            </Button>
-                        )}
-                    </div>
+                            {(searchTerm || statusFilter !== "all" || jobFilter !== "all") && (
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => {
+                                        setSearchTerm("")
+                                        setStatusFilter("all")
+                                        setJobFilter("all")
+                                        setCompanyFilter("all")
+                                    }}
+                                    className="h-10 w-10 shrink-0 text-red-500"
+                                >
+                                    Reset
+                                </Button>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 <Card>
@@ -445,13 +461,15 @@ function ManageApplicationsContent() {
                                         {filteredApplications.map((app) => (
                                             <TableRow key={app._id}>
                                                 <TableCell>
-                                                    <div className="font-medium text-blue-900">{app.jobTitle}</div>
+                                                    <div className="font-medium text-blue-900">
+                                                        {app.jobTitle || (app as any).job?.title || "N/A"}
+                                                    </div>
                                                     <div className="text-sm text-gray-500">{app.companyName}</div>
                                                 </TableCell>
                                                 <TableCell>
                                                     <div className="flex items-center gap-2">
                                                         <User className="h-4 w-4 text-gray-400" />
-                                                        <span className="font-medium">{app.fullname}</span>
+                                                        <span className="font-medium">{app.name}</span>
                                                     </div>
                                                 </TableCell>
                                                 <TableCell>
@@ -469,7 +487,7 @@ function ManageApplicationsContent() {
                                                 <TableCell>
                                                     <div className="flex items-center gap-2 text-sm text-gray-500">
                                                         <Calendar className="h-3 w-3" />
-                                                        {new Date(app.createdAt).toLocaleDateString("vi-VN")}
+                                                        {formatDate(app.appliedAt)}
                                                     </div>
                                                 </TableCell>
                                                 <TableCell>
@@ -485,7 +503,7 @@ function ManageApplicationsContent() {
                                                 </TableCell>
                                                 <TableCell>
                                                     <Select
-                                                        value={app.status}
+                                                        value={app.status || "pending"}
                                                         onValueChange={(value) => handleStatusChange(app._id, value)}
                                                         disabled={user?.role === 'employer' && app.employerId !== currentUserId}
                                                     >
@@ -493,7 +511,7 @@ function ManageApplicationsContent() {
                                                             <SelectValue>{getStatusBadge(app.status)}</SelectValue>
                                                         </SelectTrigger>
                                                         <SelectContent>
-                                                            <SelectItem value="new">
+                                                            <SelectItem value="pending">
                                                                 <span className="flex items-center gap-2">
                                                                     <span className="w-2 h-2 rounded-full bg-blue-500"></span>
                                                                     Mới
@@ -551,11 +569,11 @@ function ManageApplicationsContent() {
                                             <div className="grid grid-cols-2 gap-3 text-sm py-3 border-y border-gray-50">
                                                 <div className="space-y-1">
                                                     <p className="text-[10px] text-gray-400 font-bold uppercase">Ứng viên</p>
-                                                    <p className="font-semibold text-gray-900 truncate">{app.fullname}</p>
+                                                    <p className="font-semibold text-gray-900 truncate">{app.name}</p>
                                                 </div>
                                                 <div className="space-y-1">
                                                     <p className="text-[10px] text-gray-400 font-bold uppercase">Ngày nộp</p>
-                                                    <p className="font-medium text-gray-700">{new Date(app.createdAt).toLocaleDateString("vi-VN")}</p>
+                                                    <p className="font-medium text-gray-700">{formatDate(app.appliedAt)}</p>
                                                 </div>
                                             </div>
 
@@ -581,7 +599,7 @@ function ManageApplicationsContent() {
                                                     Xem chi tiết
                                                 </Button>
                                                 <Select
-                                                    value={app.status}
+                                                    value={app.status || "pending"}
                                                     onValueChange={(value) => handleStatusChange(app._id, value)}
                                                     disabled={user?.role === 'employer' && app.employerId !== currentUserId}
                                                 >
@@ -589,7 +607,7 @@ function ManageApplicationsContent() {
                                                         <SelectValue />
                                                     </SelectTrigger>
                                                     <SelectContent>
-                                                        <SelectItem value="new">Mới</SelectItem>
+                                                        <SelectItem value="pending">Mới</SelectItem>
                                                         <SelectItem value="reviewed">Đã xem</SelectItem>
                                                         <SelectItem value="interviewed">Mời PV</SelectItem>
                                                         <SelectItem value="hired">Đã tuyển</SelectItem>
@@ -624,7 +642,7 @@ function ManageApplicationsContent() {
                     <DialogHeader>
                         <DialogTitle className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-4 mb-2">
                             <span className="text-base sm:text-lg">
-                                {viewMode === 'cv' ? "Xem CV: " : "Chi tiết hồ sơ: "} {selectedApp?.fullname}
+                                {viewMode === 'cv' ? "Xem CV: " : "Chi tiết hồ sơ: "} {selectedApp?.name}
                             </span>
                             <div className="flex items-center gap-2 shrink-0">
                                 <Badge variant="outline" className="hidden sm:inline-flex">{selectedApp?.jobTitle}</Badge>
@@ -733,7 +751,7 @@ function ManageApplicationsContent() {
                                                     <SelectValue placeholder="Cập nhật trạng thái" />
                                                 </SelectTrigger>
                                                 <SelectContent>
-                                                    <SelectItem value="new">Mới</SelectItem>
+                                                    <SelectItem value="pending">Mới</SelectItem>
                                                     <SelectItem value="reviewed">Đã xem</SelectItem>
                                                     <SelectItem value="interviewed">Mời PV</SelectItem>
                                                     <SelectItem value="hired">Đã tuyển</SelectItem>
@@ -741,7 +759,7 @@ function ManageApplicationsContent() {
                                                 </SelectContent>
                                             </Select>
                                             <div className="pt-2 border-t border-gray-100 italic text-[10px] text-gray-400">
-                                                Ngày nộp: {selectedApp && new Date(selectedApp.createdAt).toLocaleString("vi-VN")}
+                                                Ngày nộp: {selectedApp && formatDate(selectedApp.appliedAt)}
                                             </div>
                                         </div>
                                     </div>

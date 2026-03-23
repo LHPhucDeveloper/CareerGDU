@@ -307,11 +307,13 @@ export async function GET(request: Request) {
       // Admin thấy tất cả
     } 
     else if (userRole === "employer") {
-      // Employer thấy application thuộc job mình tạo
-      where.job = {
+    // Employer thấy application thuộc job mình tạo
+    where.job = {
+      is: {
         creatorId: userId
       }
-    } 
+    }
+  }
     else {
       // Student: lấy theo userId (FIX ISSUE 3)
       const currentUser = await prisma.user.findUnique({
