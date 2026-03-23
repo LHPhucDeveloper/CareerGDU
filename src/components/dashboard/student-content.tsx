@@ -8,21 +8,23 @@ import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
 
-const statusLabels: Record<string, string> = {
-    new: "Mới gửi",
+const statusLabels = {
+    pending: "Đang chờ",
     reviewed: "Đã xem",
     interviewed: "Mời phỏng vấn",
     hired: "Đã trúng tuyển",
     rejected: "Từ chối",
 }
 
-const statusColors: Record<string, string> = {
-    new: "bg-blue-100 text-blue-800",
-    reviewed: "bg-yellow-100 text-yellow-800",
+const statusColors = {
+    pending: "bg-yellow-100 text-yellow-800",
+    reviewed: "bg-blue-100 text-blue-800",
     interviewed: "bg-purple-100 text-purple-800",
     hired: "bg-green-100 text-green-800",
     rejected: "bg-red-100 text-red-800",
 }
+
+type Status = keyof typeof statusLabels
 
 export function StudentDashboardContent() {
     const { user } = useAuth()
@@ -48,9 +50,20 @@ export function StudentDashboardContent() {
         fetchApps()
     }, [user])
 
-    const pendingCount = applications.filter(a => ['new', 'reviewed'].includes(a.status)).length
-    const interviewCount = applications.filter(a => a.status === 'interviewed').length
-    const hiredCount = applications.filter(a => a.status === 'hired').length
+    const getStatus = (a: any): Status =>
+        (a.status || 'pending').toLowerCase() as Status
+
+    const pendingCount = applications.filter(a =>
+        ['pending', 'reviewed', 'new'].includes(getStatus(a))
+    ).length
+
+    const interviewCount = applications.filter(a =>
+        getStatus(a) === 'interviewed'
+    ).length
+
+    const hiredCount = applications.filter(a =>
+        getStatus(a) === 'hired'
+    ).length
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
@@ -116,22 +129,35 @@ export function StudentDashboardContent() {
                             </div>
                         ) : (
                             <div className="space-y-4">
-                                {applications.slice(0, 4).map((app: any) => (
-                                    <div key={app._id} className="flex items-center justify-between p-3 rounded-lg border hover:bg-slate-50 transition-colors">
-                                        <div className="flex items-center gap-3">
-                                            <div className="h-10 w-10 rounded bg-gray-100 flex items-center justify-center">
-                                                <Briefcase className="h-5 w-5 text-gray-500" />
+                                {applications.slice(0, 4).map((app: any) => {
+                                    const status = getStatus(app)
+
+                                    return (
+                                        <div key={app._id} className="flex items-center justify-between p-3 rounded-lg border hover:bg-slate-50 transition-colors">
+                                            <div className="flex items-center gap-3">
+                                                <div className="h-10 w-10 rounded bg-gray-100 flex items-center justify-center">
+                                                    <Briefcase className="h-5 w-5 text-gray-500" />
+                                                </div>
+                                                <div>
+                                                    <div className="font-medium text-sm">
+                                                        {app.job?.title || "Không có tiêu đề"}
+                                                    </div>
+
+                                                    <div className="text-xs text-muted-foreground">
+                                                        {app.job?.company || "Không có công ty"}
+                                                    </div>
+                                                </div>
                                             </div>
-                                            <div>
-                                                <div className="font-medium text-sm">{app.jobTitle}</div>
-                                                <div className="text-xs text-muted-foreground">{app.companyName}</div>
-                                            </div>
+
+                                            <Badge
+                                                variant="outline"
+                                                className={`${statusColors[status]} border-0`}
+                                            >
+                                                {statusLabels[status]}
+                                            </Badge>
                                         </div>
-                                        <Badge variant="outline" className={`${statusColors[app.status || 'new']} border-0`}>
-                                            {statusLabels[app.status || 'new']}
-                                        </Badge>
-                                    </div>
-                                ))}
+                                    )
+                                })}
                             </div>
                         )}
                     </CardContent>
