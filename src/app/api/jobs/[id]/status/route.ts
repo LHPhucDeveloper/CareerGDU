@@ -3,12 +3,12 @@ import prisma from "@/database/prisma"
 
 export async function PATCH(
     req: Request,
-    { params }: { params: { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const { id } = params
+        const { id } = await params
         const body = await req.json()
-        const { status, feedback } = body
+        const { status, adminFeedback } = body
 
         const allowedStatus = ["active", "rejected", "pending"]
 
@@ -19,7 +19,7 @@ export async function PATCH(
             )
         }
 
-        if (status === "rejected" && (!feedback || feedback.trim() === "")) {
+        if (status === "rejected" && (!adminFeedback || adminFeedback.trim() === "")) {
             return NextResponse.json(
                 { error: "Lý do từ chối là bắt buộc" },
                 { status: 400 }
@@ -37,14 +37,10 @@ export async function PATCH(
             )
         }
 
-        // ✅ build data rõ ràng, không check linh tinh
-        const data: any = {
-            status,
-            updatedAt: new Date()
-        }
+        const data: any = { status }
 
-        if (feedback !== undefined) {
-            data.adminFeedback = feedback
+        if (adminFeedback !== undefined) {
+            data.adminFeedback = adminFeedback
         }
 
         if (status === "active") {
@@ -57,18 +53,12 @@ export async function PATCH(
         })
 
         return NextResponse.json({
-            success: true,
-            message: `Job updated to ${status}`
+            success: true
         })
 
     } catch (error: any) {
-        console.error("🔥 ERROR:", error)
-
         return NextResponse.json(
-            {
-                success: false,
-                error: error?.message || "Internal server error"
-            },
+            { success: false, error: error?.message },
             { status: 500 }
         )
     }

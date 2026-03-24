@@ -108,7 +108,7 @@ export default function AdminJobsPage() {
             const response = await fetch(`/api/jobs/${id}/status`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status: newStatus, feedback: adminFeedback })
+                body: JSON.stringify({ status: newStatus, adminFeedback: adminFeedback })
             })
 
             const data = await response.json()
