@@ -32,6 +32,12 @@ export function EmployerDashboardContent() {
     const [cvLoading, setCvLoading] = useState(false)
     const [appsLoading, setAppsLoading] = useState(false)
 
+    const formatDate = (date: any) => {
+        if (!date) return "N/A"
+        const d = new Date(date)
+        return isNaN(d.getTime()) ? "N/A" : d.toLocaleDateString("vi-VN")
+    }
+
     useEffect(() => {
         const fetchData = async () => {
             if (!user?._id) return
@@ -124,24 +130,65 @@ export function EmployerDashboardContent() {
         }
     }
 
+    const base64ToBlobUrl = (base64String: string) => {
+        try {
+            const [meta, content] = base64String.split(",")
+
+            if (!content) return null
+
+            const mime = meta.match(/data:(.*?);base64/)?.[1] || "application/pdf"
+            const byteCharacters = atob(content)
+            const byteNumbers = new Array(byteCharacters.length)
+
+            for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i)
+            }
+
+            const byteArray = new Uint8Array(byteNumbers)
+            const blob = new Blob([byteArray], { type: mime })
+
+            return URL.createObjectURL(blob)
+        } catch (e) {
+            console.error("Base64 error:", e)
+            return null
+        }
+    }
+
     const handleViewDetails = async (app: any) => {
         setSelectedApp(app)
         setCvUrl(null)
         setCvLoading(true)
 
-        // Auto-mark as viewed
-        if (app.status === 'new') {
+        if (app.status === 'pending') {
             handleStatusChange(app._id, 'reviewed')
         }
 
         try {
             const res = await fetch(`/api/applications/${app._id}`)
             const data = await res.json()
-            if (data.success && data.data.cvBase64) {
-                setCvUrl(data.data.cvBase64)
+
+            if (!data.success) return
+
+            const cvBase64 = data.data?.cvBase64
+            const cvUrlFromApi = data.data?.cvUrl
+
+            // ✅ CASE 1: base64
+            if (cvBase64) {
+                const blobUrl = base64ToBlobUrl(cvBase64)
+                if (blobUrl) setCvUrl(blobUrl)
             }
+            // ✅ CASE 2: url
+            else if (cvUrlFromApi) {
+                setCvUrl(cvUrlFromApi)
+            }
+            // ❌ CASE 3: không có
+            else {
+                setCvUrl(null)
+            }
+
         } catch (error) {
             console.error("Error loading CV", error)
+            setCvUrl(null)
         } finally {
             setCvLoading(false)
         }
@@ -167,7 +214,7 @@ export function EmployerDashboardContent() {
 
     const getStatusBadge = (status: string) => {
         switch (status) {
-            case "new": return <Badge className="bg-blue-100 text-blue-700">Mới</Badge>
+            case "pending": return <Badge className="bg-blue-100 text-blue-700">Mới</Badge>
             case "reviewed": return <Badge className="bg-yellow-100 text-yellow-700">Đã xem</Badge>
             case "interviewed": return <Badge className="bg-purple-100 text-purple-700">Phỏng vấn</Badge>
             case "hired": return <Badge className="bg-green-100 text-green-700">Đã tuyển</Badge>
@@ -337,11 +384,11 @@ export function EmployerDashboardContent() {
                                             <User className="h-5 w-5 text-blue-600" />
                                         </div>
                                         <div className="space-y-1 min-w-0">
-                                            <h4 className="font-semibold truncate">{app.fullname}</h4>
+                                            <h4 className="font-semibold truncate">{app.name}</h4>
                                             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                                <span className="font-medium text-blue-600 truncate">{app.jobTitle}</span>
+                                                <span className="font-medium text-blue-600 truncate">{app.job?.title}</span>
                                                 <span>•</span>
-                                                <span>{new Date(app.createdAt).toLocaleDateString('vi-VN')}</span>
+                                                <span>{formatDate(app.appliedAt)}</span>
                                             </div>
                                         </div>
                                     </div>
@@ -354,7 +401,7 @@ export function EmployerDashboardContent() {
                                                 <SelectValue>{getStatusBadge(app.status)}</SelectValue>
                                             </SelectTrigger>
                                             <SelectContent>
-                                                <SelectItem value="new">Mới</SelectItem>
+                                                <SelectItem value="pending">Mới</SelectItem>
                                                 <SelectItem value="reviewed">Đã xem</SelectItem>
                                                 <SelectItem value="interviewed">Mời PV</SelectItem>
                                                 <SelectItem value="hired">Đã tuyển</SelectItem>
@@ -376,8 +423,8 @@ export function EmployerDashboardContent() {
                     <DialogHeader className="border-b pb-4">
                         <DialogTitle className="flex items-center justify-between">
                             <div className="flex flex-col gap-1">
-                                <span>Chi tiết ứng viên: {selectedApp?.fullname}</span>
-                                <Badge variant="outline" className="w-fit">{selectedApp?.jobTitle}</Badge>
+                                <span>Chi tiết ứng viên: {selectedApp?.name}</span>
+                                <Badge variant="outline" className="w-fit">{selectedApp?.job?.title}</Badge>
                             </div>
                         </DialogTitle>
                     </DialogHeader>
@@ -403,7 +450,7 @@ export function EmployerDashboardContent() {
                                 <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Trạng thái hiện tại</h4>
                                 <div className="flex items-center gap-2">
                                     {selectedApp && getStatusBadge(selectedApp.status)}
-                                    <span className="text-xs text-muted-foreground">Nộp ngày: {selectedApp && new Date(selectedApp.createdAt).toLocaleDateString('vi-VN')}</span>
+                                    <span className="text-xs text-muted-foreground">Nộp ngày: {selectedApp && new Date(selectedApp.appliedAt).toLocaleDateString('vi-VN')}</span>
                                 </div>
                             </div>
                         </div>
@@ -453,8 +500,8 @@ export function EmployerDashboardContent() {
                                                 <User className="h-4 w-4 text-blue-600" />
                                             </div>
                                             <div className="min-w-0">
-                                                <div className="font-medium truncate">{app.fullname}</div>
-                                                <div className="text-xs text-muted-foreground">{new Date(app.createdAt).toLocaleDateString('vi-VN')}</div>
+                                                <div className="font-medium truncate">{app.name}</div>
+                                                <div className="text-xs text-muted-foreground">{new Date(app.appliedAt).toLocaleDateString('vi-VN')}</div>
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-3">
@@ -466,7 +513,7 @@ export function EmployerDashboardContent() {
                                                     <SelectValue>{getStatusBadge(app.status)}</SelectValue>
                                                 </SelectTrigger>
                                                 <SelectContent>
-                                                    <SelectItem value="new">Mới</SelectItem>
+                                                    <SelectItem value="pending">Mới</SelectItem>
                                                     <SelectItem value="reviewed">Đã xem</SelectItem>
                                                     <SelectItem value="interviewed">Mời PV</SelectItem>
                                                     <SelectItem value="hired">Đã tuyển</SelectItem>
