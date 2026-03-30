@@ -128,6 +128,8 @@ function ManageApplicationsContent() {
         new Set(applications.map(app => app.company?.name))
     ).filter(Boolean) as string[]
 
+    const [hasAutoOpened, setHasAutoOpened] = useState(false)
+
     useEffect(() => {
         if (!isLoading && user) {
             fetchApplications()
@@ -137,14 +139,19 @@ function ManageApplicationsContent() {
     // Deep linking: Check for 'id' in URL and auto-open that application
     useEffect(() => {
         const idFromUrl = searchParams.get("id")
-        if (idFromUrl && applications.length > 0) {
+
+        if (!hasAutoOpened && idFromUrl && applications.length > 0) {
             const targetApp = applications.find(app => app.id === idFromUrl)
+
             if (targetApp) {
-                console.log("Deep linking to application:", idFromUrl)
-                handleViewCV(targetApp)
+                setHasAutoOpened(true) // 🔥 set trước
+
+                handleViewCV(targetApp).finally(() => {
+                    router.replace("/dashboard/applicants-manager")
+                })
             }
         }
-    }, [searchParams, applications])
+    }, [searchParams, applications, hasAutoOpened])
 
     const fetchApplications = async () => {
         try {
@@ -185,15 +192,8 @@ function ManageApplicationsContent() {
         setViewMode("cv")
         setCvLoading(true)
 
-        // clear old blob URL
-        setCvUrl((prev) => {
-            if (prev?.startsWith("blob:")) {
-                URL.revokeObjectURL(prev)
-            }
-            return null
-        })
+        setCvUrl(null)
 
-        // auto update status
         if (app.status === "pending") {
             handleStatusChange(app.id, "reviewed")
         }
@@ -206,30 +206,65 @@ function ManageApplicationsContent() {
                 throw new Error("API failed")
             }
 
-            const cvBase64 = data.data?.cvBase64
             const cvUrl = data.data?.cvUrl
+            const cvType = data.data?.cvType
+            const originalName = data.data?.cvOriginalName || "CV.docx"
 
-            // ✅ CASE 1: base64
+            // ✅ detect file type
+            const isWord =
+                originalName.toLowerCase().endsWith(".doc") ||
+                originalName.toLowerCase().endsWith(".docx")
+
+            if (cvUrl) {
+                const fullUrl = cvUrl.startsWith("http")
+                    ? cvUrl
+                    : `${window.location.origin}${cvUrl}`
+
+                // ✅ PDF → preview
+                if (cvType === "application/pdf" && !isWord) {
+                    setCvUrl(fullUrl)
+                }
+                // ✅ WORD → LUÔN DOWNLOAD (KHÔNG preview)
+                else {
+                    // ✅ WORD → download giống application (fetch + blob)
+                    const response = await fetch(fullUrl)
+                    const blob = await response.blob()
+
+                    const blobUrl = URL.createObjectURL(blob)
+
+                    const link = document.createElement("a")
+                    link.href = blobUrl
+                    link.download = originalName
+
+                    document.body.appendChild(link)
+                    link.click()
+                    document.body.removeChild(link)
+
+                    URL.revokeObjectURL(blobUrl)
+
+                    // đóng modal
+                    setSelectedApp(null)
+                }
+
+                return
+            }
+
+            // ❗ fallback nếu backend trả base64
+            const cvBase64 = data.data?.cvBase64
             if (cvBase64) {
                 const blobUrl = base64ToBlobUrl(cvBase64)
 
                 if (blobUrl) {
-                    setCvUrl(blobUrl)
-                } else {
-                    toast({
-                        title: "Lỗi",
-                        description: "Không thể xử lý file CV",
-                        variant: "destructive"
-                    })
+                    const link = document.createElement("a")
+                    link.href = blobUrl
+                    link.download = originalName
+
+                    document.body.appendChild(link)
+                    link.click()
+                    document.body.removeChild(link)
+
+                    setSelectedApp(null)
                 }
-
-                // ✅ CASE 2: URL
-            } else if (cvUrl) {
-                setCvUrl(cvUrl)
-
-                // ✅ CASE 3: không có CV
-            } else {
-                setCvUrl(null)
             }
 
         } catch (error) {
@@ -240,8 +275,6 @@ function ManageApplicationsContent() {
                 description: "Có lỗi khi tải CV",
                 variant: "destructive"
             })
-
-            setCvUrl(null)
         } finally {
             setCvLoading(false)
         }

@@ -26,7 +26,7 @@ interface Partner {
     logo: string
     industry: string
     size: string
-    location: string
+    address: string
     description: string
     website: string
     verified: boolean
@@ -185,7 +185,7 @@ export default function PartnerManagementPage() {
                             industry: "",
                             logo: "",
                             size: "",
-                            location: "",
+                            address: "",
                             description: "",
                             website: "",
                             benefits: []
@@ -265,7 +265,7 @@ export default function PartnerManagementPage() {
                                                 <td className="py-4 px-4 text-sm text-gray-500">
                                                     <div className="flex items-center gap-1.5 max-w-[200px] truncate">
                                                         <MapPin className="h-3.5 w-3.5 shrink-0 text-gray-400" />
-                                                        <span className="truncate">{p.location}</span>
+                                                        <span className="truncate">{p.address}</span>
                                                     </div>
                                                 </td>
                                                 <td className="py-4 px-4 text-right">
@@ -335,7 +335,7 @@ export default function PartnerManagementPage() {
                                         <div className="grid grid-cols-2 gap-2 text-[11px] text-gray-600">
                                             <div className="flex items-center gap-1.5 truncate bg-gray-50 rounded-lg py-2 px-3">
                                                 <MapPin className="h-3.5 w-3.5 shrink-0 text-gray-400" />
-                                                <span className="truncate">{p.location || "N/A"}</span>
+                                                <span className="truncate">{p.address || "N/A"}</span>
                                             </div>
                                             {p.website && (
                                                 <a href={p.website} target="_blank" className="flex items-center gap-1.5 truncate bg-blue-50 text-blue-600 rounded-lg py-2 px-3 hover:bg-blue-100 transition-colors">
@@ -425,8 +425,8 @@ export default function PartnerManagementPage() {
                             <div className="space-y-2">
                                 <Label>Địa điểm</Label>
                                 <Input
-                                    value={editingPartner?.location || ""}
-                                    onChange={(e) => setEditingPartner({ ...editingPartner, location: e.target.value })}
+                                    value={editingPartner?.address || ""}
+                                    onChange={(e) => setEditingPartner({ ...editingPartner, address: e.target.value })}
                                     placeholder="VD: Hà Nội, Việt Nam"
                                 />
                             </div>
