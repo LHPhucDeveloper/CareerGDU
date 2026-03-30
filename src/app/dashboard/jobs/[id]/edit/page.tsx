@@ -119,6 +119,20 @@ const formSchema = z.object({
     message: "Lương tối đa không được nhỏ hơn lương tối thiểu",
     path: ["salaryMax"],
 }).refine((data) => {
+    // ❗ nếu KHÔNG phải thỏa thuận → phải nhập ít nhất 1 giá trị
+    if (!data.isNegotiable) {
+        const min = data.salaryMin || 0
+        const max = data.salaryMax || 0
+
+        if (!min && !max) {
+            return false
+        }
+    }
+    return true
+}, {
+    message: "Vui lòng nhập mức lương hoặc chọn 'Thỏa thuận'",
+    path: ["salaryMin"], // hoặc salaryMax đều được
+}).refine((data) => {
     if (!data.unlimitedQuantity && (!data.quantity || data.quantity < 1)) {
         return false
     }
@@ -302,35 +316,43 @@ export default function EditJobPage({ params }: { params: { id: string } }) {
             })
 
             // Format data logic same as POST
-            let salaryString = "Thỏa thuận"
-            if (!normalizedValues.isNegotiable) {
-                const min = normalizedValues.salaryMin || 0
-                const max = normalizedValues.salaryMax || 0
+            let salaryString = ""
 
-                if (normalizedValues.type === "part-time") {
-                    if (min && max) {
-                        salaryString = `${min.toLocaleString()} - ${max.toLocaleString()} VNĐ/giờ`
-                    } else if (min) {
-                        salaryString = `Từ ${min.toLocaleString()} VNĐ/giờ`
-                    } else if (max) {
-                        salaryString = `Đến ${max.toLocaleString()} VNĐ/giờ`
-                    }
-                } else {
-                    // Full-time / Internship (Assume monthly)
-                    const formatMoney = (val: number) => {
-                        if (val >= 1000000) return `${(val / 1000000).toLocaleString()} triệu`;
-                        return `${val.toLocaleString()} VNĐ`;
-                    }
+// ✅ chỉ khi tick mới là thỏa thuận
+if (normalizedValues.isNegotiable) {
+    salaryString = "Thỏa thuận"
+} else {
+    const min = normalizedValues.salaryMin || 0
+    const max = normalizedValues.salaryMax || 0
 
-                    if (min && max) {
-                        salaryString = `${formatMoney(min)} - ${formatMoney(max)}/tháng`
-                    } else if (min) {
-                        salaryString = `Từ ${formatMoney(min)}/tháng`
-                    } else if (max) {
-                        salaryString = `Đến ${formatMoney(max)}/tháng`
-                    }
-                }
-            }
+    // ❗ nếu user KHÔNG nhập gì → lỗi
+    if (!min && !max) {
+        throw new Error("Vui lòng nhập mức lương hoặc chọn 'Thỏa thuận'")
+    }
+
+    if (normalizedValues.type === "part-time") {
+        if (min && max) {
+            salaryString = `${min.toLocaleString()} - ${max.toLocaleString()} VNĐ/giờ`
+        } else if (min) {
+            salaryString = `Từ ${min.toLocaleString()} VNĐ/giờ`
+        } else if (max) {
+            salaryString = `Đến ${max.toLocaleString()} VNĐ/giờ`
+        }
+    } else {
+        const formatMoney = (val: number) => {
+            if (val >= 1000000) return `${(val / 1000000).toLocaleString()} triệu`
+            return `${val.toLocaleString()} VNĐ`
+        }
+
+        if (min && max) {
+            salaryString = `${formatMoney(min)} - ${formatMoney(max)}/tháng`
+        } else if (min) {
+            salaryString = `Từ ${formatMoney(min)}/tháng`
+        } else if (max) {
+            salaryString = `Đến ${formatMoney(max)}/tháng`
+        }
+    }
+}
 
             const requirementsList = normalizedValues.requirements.split('\n').filter(line => line.trim() !== "")
             const detailedBenefitsList = normalizedValues.detailedBenefits ? normalizedValues.detailedBenefits.split('\n').filter(line => line.trim() !== "") : []
@@ -902,7 +924,9 @@ export default function EditJobPage({ params }: { params: { id: string } }) {
                             </div>
 
                             <div className="space-y-4">
-                                <FormLabel className="text-base font-semibold">Ngành học liên quan</FormLabel>
+                                <FormLabel className="text-base font-semibold">
+  Ngành học liên quan <span className="text-red-500">*</span>
+</FormLabel>
                                 <FormField
                                     control={form.control}
                                     name="relatedMajors"

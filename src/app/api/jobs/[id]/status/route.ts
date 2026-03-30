@@ -37,6 +37,7 @@ export async function PATCH(
             )
         }
 
+        // ✅ chuẩn bị data update trước
         const data: any = { status }
 
         if (adminFeedback !== undefined) {
@@ -47,10 +48,38 @@ export async function PATCH(
             data.postedAt = new Date()
         }
 
+        // ✅ update 1 lần duy nhất
         await prisma.job.update({
             where: { id },
             data
         })
+
+        // ✅ tạo notification (không cần cho pending)
+        if (status !== "pending") {
+            let title = ""
+            let message = ""
+
+            if (status === "active") {
+                title = "Tin tuyển dụng đã được duyệt"
+                message = `Tin "${job.title}" đã được duyệt và hiển thị.`
+            }
+
+            if (status === "rejected") {
+                title = "Tin tuyển dụng bị từ chối"
+                message = `Tin "${job.title}" bị từ chối. Lý do: ${adminFeedback || "Không có"}`
+            }
+
+            await prisma.notification.create({
+                data: {
+                    userId: job.creatorId,
+                    type: "job",
+                    title,
+                    message,
+                    link: `/dashboard/my-jobs`,
+                    read: false
+                }
+            })
+        }
 
         return NextResponse.json({
             success: true

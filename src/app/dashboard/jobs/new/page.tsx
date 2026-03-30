@@ -126,6 +126,19 @@ const formSchema = z.object({
 }, {
     message: "Số lượng phải lớn hơn 0",
     path: ["quantity"],
+}).refine((data) => {
+    if (!data.isNegotiable) {
+        const min = data.salaryMin || 0
+        const max = data.salaryMax || 0
+
+        if (!min && !max) {
+            return false
+        }
+    }
+    return true
+}, {
+    message: "Vui lòng nhập mức lương hoặc chọn 'Thỏa thuận'",
+    path: ["salaryMin"],
 })
 
 export default function PostJobPage() {
@@ -242,10 +255,18 @@ export default function PostJobPage() {
             })
 
             // Format data
-            let salaryString = "Thỏa thuận"
-            if (!normalizedValues.isNegotiable) {
+            let salaryString = ""
+
+            if (normalizedValues.isNegotiable) {
+                salaryString = "Thỏa thuận"
+            } else {
                 const min = normalizedValues.salaryMin || 0
                 const max = normalizedValues.salaryMax || 0
+
+                // ❗ bắt buộc phải nhập nếu không chọn thỏa thuận
+                if (!min && !max) {
+                    throw new Error("Vui lòng nhập mức lương hoặc chọn 'Thỏa thuận'")
+                }
 
                 if (normalizedValues.type === "part-time") {
                     if (min && max) {
@@ -256,10 +277,9 @@ export default function PostJobPage() {
                         salaryString = `Đến ${max.toLocaleString()} VNĐ/giờ`
                     }
                 } else {
-                    // Full-time / Internship (Assume monthly)
                     const formatMoney = (val: number) => {
-                        if (val >= 1000000) return `${(val / 1000000).toLocaleString()} triệu`;
-                        return `${val.toLocaleString()} VNĐ`;
+                        if (val >= 1000000) return `${(val / 1000000).toLocaleString()} triệu`
+                        return `${val.toLocaleString()} VNĐ`
                     }
 
                     if (min && max) {
@@ -873,7 +893,9 @@ export default function PostJobPage() {
                             </div>
 
                             <div className="space-y-4">
-                                <FormLabel className="text-base font-semibold">Ngành học liên quan</FormLabel>
+                                <FormLabel className="text-base font-semibold">
+                                    Ngành học liên quan <span className="text-red-500">*</span>
+                                </FormLabel>
                                 <FormField
                                     control={form.control}
                                     name="relatedMajors"

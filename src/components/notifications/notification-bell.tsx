@@ -14,7 +14,7 @@ import {
 import { useAuth } from "@/lib/auth-context"
 
 interface Notification {
-    _id: string
+    id: string
     type: "job" | "message" | "interview" | "system" | "visitor"
     title: string
     message: string
@@ -48,7 +48,7 @@ export function NotificationBell() {
     const [open, setOpen] = useState(false)
 
     const fetchNotifications = async () => {
-        const userId = user?.id || (user as any)?._id
+        const userId = user?.id || (user as any)?.id
         if (!userId) return
 
         try {
@@ -68,30 +68,43 @@ export function NotificationBell() {
     }
 
     useEffect(() => {
+    fetchNotifications()
+
+    const interval = setInterval(() => {
         fetchNotifications()
-        // Poll for new notifications every 30 seconds
-        const interval = setInterval(fetchNotifications, 30000)
-        return () => clearInterval(interval)
-    }, [user?.id, (user as any)?._id])
+    }, 30000)
+
+    return () => clearInterval(interval)
+}, [user?.id])
 
     const markAsRead = async (notificationId: string) => {
-        try {
-            await fetch("/api/notifications", {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ notificationId, action: "mark_read" }),
-            })
-            setNotifications(prev =>
-                prev.map(n => (n._id === notificationId ? { ...n, read: true } : n))
-            )
-            setUnreadCount(prev => Math.max(0, prev - 1))
-        } catch (error) {
-            console.error("Error marking notification as read:", error)
+    try {
+        const res = await fetch("/api/notifications", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ notificationId, action: "mark_read" }),
+        })
+
+        const data = await res.json()
+
+        if (!data.success) {
+            throw new Error("Mark read failed")
         }
+
+        // update UI
+        setNotifications(prev =>
+            prev.map(n => (n.id === notificationId ? { ...n, read: true } : n))
+        )
+
+        setUnreadCount(prev => prev > 0 ? prev - 1 : 0)
+
+    } catch (error) {
+        console.error("Error marking notification as read:", error)
     }
+}
 
     const markAllAsRead = async () => {
-        const userId = user?.id || (user as any)?._id
+        const userId = user?.id || (user as any)?.id
         if (!userId) return
 
         try {
@@ -112,7 +125,7 @@ export function NotificationBell() {
             await fetch(`/api/notifications?id=${notificationId}`, {
                 method: "DELETE",
             })
-            setNotifications(prev => prev.filter(n => n._id !== notificationId))
+            setNotifications(prev => prev.filter(n => n.id !== notificationId))
         } catch (error) {
             console.error("Error deleting notification:", error)
         }
@@ -184,25 +197,31 @@ export function NotificationBell() {
 
                         return (
                             <DropdownMenuItem
-                                key={notification._id}
+                                key={notification.id}
                                 className={`flex items-start gap-3 p-3 cursor-pointer ${!notification.read ? "bg-blue-50" : ""
                                     }`}
-                                onClick={() => {
-                                    if (!notification.read) markAsRead(notification._id)
-                                    if (notification.link) {
-                                        if (notification.link.startsWith('http')) {
-                                            window.location.href = notification.link
-                                        } else {
-                                            // Fix for existing notifications linking to generic dashboard
-                                            if (notification.type === 'job' && notification.link === '/dashboard') {
-                                                router.push('/dashboard/jobs')
-                                            } else {
-                                                router.push(notification.link)
-                                            }
-                                        }
-                                        setOpen(false)
-                                    }
-                                }}
+                                onClick={async () => {
+    try {
+        if (!notification.read) {
+            await markAsRead(notification.id)
+        }
+
+        if (notification.link) {
+            if (notification.link.startsWith('http')) {
+                window.location.href = notification.link
+            } else {
+                if (notification.type === 'job' && notification.link === '/dashboard') {
+                    router.push('/dashboard/jobs')
+                } else {
+                    router.push(notification.link)
+                }
+            }
+            setOpen(false)
+        }
+    } catch (err) {
+        console.error(err)
+    }
+}}
                             >
                                 <div className={`mt-0.5 ${colorClass}`}>
                                     <Icon className="h-4 w-4" />
@@ -224,7 +243,7 @@ export function NotificationBell() {
                                     className="h-6 w-6 text-gray-400 hover:text-red-500"
                                     onClick={(e) => {
                                         e.stopPropagation()
-                                        deleteNotification(notification._id)
+                                        deleteNotification(notification.id)
                                     }}
                                 >
                                     <Trash2 className="h-3 w-3" />
